@@ -57,6 +57,13 @@ export abstract class BaseSearchProvider {
   abstract id: string;
 
   /**
+   * Whether the database keeps the index up to date by itself (triggers,
+   * expression indexes…), in which case index, remove and updateMetadata are
+   * no-ops that need not be called when data changes.
+   */
+  indexedByDatabase = false;
+
+  /**
    * Perform a full-text search scoped to a user's accessible documents.
    *
    * @param user - the user performing the search.

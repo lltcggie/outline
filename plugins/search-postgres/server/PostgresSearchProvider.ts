@@ -48,6 +48,8 @@ type RankedDocument = Document & {
 export default class PostgresSearchProvider extends BaseSearchProvider {
   id = "postgres";
 
+  indexedByDatabase = true;
+
   /**
    * The maximum length of a search query.
    */
@@ -192,42 +194,7 @@ export default class PostgresSearchProvider extends BaseSearchProvider {
   ): Promise<SearchResponse> {
     const { limit = 15, offset = 0, query } = options;
 
-    const where = await PostgresSearchProvider.buildWhere(team, {
-      ...options,
-      // Team-context search (used by shares) is always restricted to
-      // published, non-archived documents.
-      filter: PostgresSearchProvider.withPublishedConstraint(options.filter),
-    });
-
-    if (options.share) {
-      let documentIds: string[] | undefined;
-
-      if (options.share.collectionId) {
-        const sharedCollection =
-          options.share.collection ??
-          (await options.share.$get("collection", { scope: "unscoped" }));
-        invariant(sharedCollection, "Cannot find collection for share");
-        documentIds = sharedCollection.getAllDocumentIds();
-      } else if (
-        options.share.documentId &&
-        options.share.includeChildDocuments
-      ) {
-        const sharedDocument = await options.share.$get("document");
-        invariant(sharedDocument, "Cannot find document for share");
-
-        const childDocumentIds = await sharedDocument.findAllChildDocumentIds({
-          archivedAt: {
-            [Op.is]: null,
-          },
-        });
-
-        documentIds = [sharedDocument.id, ...childDocumentIds];
-      }
-
-      where[Op.and].push({
-        id: documentIds,
-      });
-    }
+    const where = await PostgresSearchProvider.buildTeamWhere(team, options);
 
     const findOptions = PostgresSearchProvider.buildFindOptions({
       query,
@@ -624,7 +591,69 @@ export default class PostgresSearchProvider extends BaseSearchProvider {
     return { operator: "AND", filters: [filter, publishedShape] };
   }
 
-  private static async buildWhere(model: User | Team, options: SearchOptions) {
+  /**
+   * Builds the conditions of a team-context search, as used by shares: the
+   * conditions of buildWhere restricted to published, non-archived documents
+   * and, for a share, to the documents reachable through it.
+   *
+   * @param team - the team to search in.
+   * @param options - the search options.
+   * @returns the conditions, to be passed to findAll.
+   */
+  protected static async buildTeamWhere(team: Team, options: SearchOptions) {
+    const where = await PostgresSearchProvider.buildWhere(team, {
+      ...options,
+      // Team-context search (used by shares) is always restricted to
+      // published, non-archived documents.
+      filter: PostgresSearchProvider.withPublishedConstraint(options.filter),
+    });
+
+    if (options.share) {
+      let documentIds: string[] | undefined;
+
+      if (options.share.collectionId) {
+        const sharedCollection =
+          options.share.collection ??
+          (await options.share.$get("collection", { scope: "unscoped" }));
+        invariant(sharedCollection, "Cannot find collection for share");
+        documentIds = sharedCollection.getAllDocumentIds();
+      } else if (
+        options.share.documentId &&
+        options.share.includeChildDocuments
+      ) {
+        const sharedDocument = await options.share.$get("document");
+        invariant(sharedDocument, "Cannot find document for share");
+
+        const childDocumentIds = await sharedDocument.findAllChildDocumentIds({
+          archivedAt: {
+            [Op.is]: null,
+          },
+        });
+
+        documentIds = [sharedDocument.id, ...childDocumentIds];
+      }
+
+      where[Op.and].push({
+        id: documentIds,
+      });
+    }
+
+    return where;
+  }
+
+  /**
+   * Builds the permission-scoped conditions of a search: the documents the
+   * user or team may see, narrowed by the filter and, when a query is given,
+   * by the full-text condition.
+   *
+   * @param model - the user or team searching.
+   * @param options - the search options.
+   * @returns the conditions, to be passed to findAll.
+   */
+  protected static async buildWhere(
+    model: User | Team,
+    options: SearchOptions
+  ) {
     const teamId = model instanceof Team ? model.id : model.teamId;
     const where: WhereOptions<Document> & {
       [Op.or]: WhereOptions<Document>[];

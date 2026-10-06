@@ -792,9 +792,10 @@ describe("PostgresSearchProvider", () => {
       });
       expect(results.length).toBe(1);
       // The earlier "world" is highlighted too, which must not move the start
-      // of the slice into the middle of a word.
-      expect(results[0].context).toBe(
-        " conflict that involved many nations over six years. Later on, <b>hello world</b> became the canonical first program"
+      // of the slice into the middle of a word. The PGroonga provider, which
+      // runs this test too, keeps the final period.
+      expect(results[0].context).toMatch(
+        /^ conflict that involved many nations over six years\. Later on, <b>hello world<\/b> became the canonical first program\.?$/
       );
     });
 

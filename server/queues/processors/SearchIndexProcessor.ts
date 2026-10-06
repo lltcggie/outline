@@ -39,9 +39,10 @@ export default class SearchIndexProcessor extends BaseProcessor {
   ): Promise<void> {
     const provider = SearchProviderManager.getProvider();
 
-    // When using the built-in Postgres search provider, tsvector triggers
-    // handle indexing directly and the provider methods are effectively no-ops for now.
-    if (process.env.SEARCH_PROVIDER === "postgres") {
+    // A provider whose index the database maintains (the built-in Postgres
+    // provider and those derived from it) has nothing to do here, so skip
+    // loading the records its no-op methods would receive.
+    if (provider.indexedByDatabase) {
       return;
     }
 
