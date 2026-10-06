@@ -50,6 +50,11 @@ export const isURLMentionable = ({
     case IntegrationService.GitLab: {
       const settings =
         integration.settings as IntegrationSettings<IntegrationType.Embed>;
+      // An instance that is still being connected is not unfurled.
+      if (settings.gitlab?.pending) {
+        return false;
+      }
+
       let gitlabHostname: string | undefined;
       try {
         gitlabHostname = settings.gitlab?.url

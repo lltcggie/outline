@@ -53,6 +53,7 @@ import type {
   SourceMetadata,
 } from "@shared/types";
 import { DocumentPreferenceDefaults } from "@shared/constants";
+import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import { ProsemirrorHelper } from "@shared/utils/ProsemirrorHelper";
 import { UrlHelper } from "@shared/utils/UrlHelper";
 import slugify from "@shared/utils/slugify";
@@ -78,6 +79,7 @@ import View from "./View";
 import ArchivableModel from "./base/ArchivableModel";
 import { CounterCache } from "./decorators/CounterCache";
 import { DocumentHelper } from "./helpers/DocumentHelper";
+import { ProsemirrorHelper as ServerProsemirrorHelper } from "./helpers/ProsemirrorHelper";
 import IsHexColor from "./validators/IsHexColor";
 import Length from "./validators/Length";
 import type { APIContext } from "@server/types";
@@ -485,6 +487,27 @@ class Document extends ArchivableModel<
   // hooks
 
   @BeforeSave
+  static removeUnfurledMentionData(model: Document) {
+    // Unfurled data depends on the access of whoever fetched it and must not be
+    // stored, regardless of which client or API wrote the content. The same
+    // reference is returned when nothing changed.
+    if (model.changed("content")) {
+      model.content = ProsemirrorDataHelper.removeUnfurledMentionData(
+        model.content
+      );
+    }
+
+    if (model.state && model.changed("state")) {
+      const state = ServerProsemirrorHelper.removeUnfurledMentionDataFromState(
+        model.state
+      );
+      if (state) {
+        model.state = state;
+      }
+    }
+  }
+
+  @BeforeSave
   static async updateCollectionStructure(
     model: Document,
     { transaction }: SaveOptions<InferAttributes<Document>>
@@ -571,7 +594,9 @@ class Document extends ArchivableModel<
       model.collaboratorIds = [];
     }
 
-    // backfill content if it's missing
+    // backfill content if it's missing. This runs after unfurled mention data
+    // was removed by the BeforeSave hook, so the backfilled content is cleaned
+    // by toJSON instead.
     if (!model.content) {
       model.content = await DocumentHelper.toJSON(model);
     }

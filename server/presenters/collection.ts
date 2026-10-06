@@ -1,3 +1,4 @@
+import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import { Hour } from "@shared/utils/time";
 import type Collection from "@server/models/Collection";
 import { DocumentHelper } from "@server/models/helpers/DocumentHelper";
@@ -45,7 +46,9 @@ export default async function presentCollection(
             )
           : undefined,
     description:
-      !asData || options.includeText ? collection.description : undefined,
+      !asData || options.includeText
+        ? await presentDescription(collection)
+        : undefined,
     sort: collection.sort,
     icon: collection.icon,
     color: collection.color,
@@ -78,4 +81,27 @@ export default async function presentCollection(
   }
 
   return res;
+}
+
+/**
+ * Presents the markdown description of a collection. A description stored
+ * before unfurled data was removed from mentions may contain the titles of
+ * external resources, so it is regenerated from the cleaned content then.
+ *
+ * @param collection the collection to present.
+ * @returns the markdown description.
+ */
+async function presentDescription(collection: Collection) {
+  if (!collection.content) {
+    return collection.description;
+  }
+
+  const content = ProsemirrorDataHelper.removeUnfurledMentionData(
+    collection.content
+  );
+  if (content === collection.content) {
+    return collection.description;
+  }
+
+  return DocumentHelper.toMarkdown(content, { includeTitle: false });
 }

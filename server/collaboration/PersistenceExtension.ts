@@ -21,6 +21,12 @@ export default class PersistenceExtension implements Extension {
   /** The maximum number of times persisting a single document will be retried. */
   private static maxPersistFailures = 5;
 
+  /**
+   * The origin of the server's own removal of unfurled mention data, which is
+   * not a change that needs to be stored.
+   */
+  private static readonly cleanupOrigin = Symbol("removeUnfurledMentionData");
+
   /** The names of documents that have changed since they were last persisted. */
   private unsavedDocumentNames = new Set<string>();
 
@@ -51,10 +57,11 @@ export default class PersistenceExtension implements Extension {
 
     // If the document already has state, we can return it without needing a transaction
     if (documentWithoutLock.state) {
-      const ydoc = new Y.Doc();
-      Logger.info("database", `Document ${documentId} is in database state`);
-      Y.applyUpdate(ydoc, documentWithoutLock.state);
-      return ydoc;
+      return this.loadFromState(
+        documentId,
+        documentWithoutLock.state,
+        fieldName
+      );
     }
 
     // If the document doesn't have state yet, we need to acquire a lock and create it
@@ -72,10 +79,7 @@ export default class PersistenceExtension implements Extension {
 
       // Double-check the state in case another process created it
       if (document.state) {
-        ydoc = new Y.Doc();
-        Logger.info("database", `Document ${documentId} is in database state`);
-        Y.applyUpdate(ydoc, document.state);
-        return ydoc;
+        return this.loadFromState(documentId, document.state, fieldName);
       }
 
       if (document.content) {
@@ -91,6 +95,9 @@ export default class PersistenceExtension implements Extension {
         );
         ydoc = ProsemirrorHelper.toYDoc(document.text, fieldName);
       }
+      // Hooks are bypassed below, and both the content and the markdown text of
+      // older documents may still carry unfurled data.
+      ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(ydoc, fieldName);
       const state = ProsemirrorHelper.toState(ydoc);
       await document.update(
         {
@@ -113,7 +120,11 @@ export default class PersistenceExtension implements Extension {
     // Track changes from the ydoc itself rather than the onChange hook, which
     // runs behind other extensions in an async chain and so may not have
     // recorded the change by the time the document is stored on disconnect.
-    document.on("update", () => {
+    document.on("update", (_update: Uint8Array, origin: unknown) => {
+      // The server's own cleanup is not a change that needs to be stored.
+      if (origin === PersistenceExtension.cleanupOrigin) {
+        return;
+      }
       this.unsavedDocumentNames.add(documentName);
     });
   }
@@ -149,6 +160,16 @@ export default class PersistenceExtension implements Extension {
       Logger.debug("multiplayer", `No changes for ${documentName}`);
       return;
     }
+
+    // Unfurled data written by outdated clients or other paths is removed from
+    // the live document, so that the change is also synced to every connected
+    // client. The update listener ignores this origin, so the change does not
+    // schedule another store.
+    ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(
+      document,
+      "default",
+      PersistenceExtension.cleanupOrigin
+    );
 
     // Collaborators are used for attribution only, failure to load them must
     // not prevent the document itself from being persisted.
@@ -195,5 +216,26 @@ export default class PersistenceExtension implements Extension {
         giveUp,
       });
     }
+  }
+
+  /**
+   * Creates a collaborative document from its stored state.
+   *
+   * @param documentId the id of the document.
+   * @param state the stored state of the document.
+   * @param fieldName the name of the fragment holding the document.
+   * @returns the collaborative document.
+   */
+  private loadFromState(
+    documentId: string,
+    state: Uint8Array,
+    fieldName: string
+  ) {
+    const ydoc = new Y.Doc();
+    Logger.info("database", `Document ${documentId} is in database state`);
+    Y.applyUpdate(ydoc, state);
+    // Previously stored unfurled data is never served to clients.
+    ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(ydoc, fieldName);
+    return ydoc;
   }
 }

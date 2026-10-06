@@ -123,7 +123,8 @@ export class DocumentHelper {
 
   /**
    * Returns the document as a plain JSON object. This method uses the derived content if available
-   * then the collaborative state, otherwise it falls back to Markdown.
+   * then the collaborative state, otherwise it falls back to Markdown. Data unfurled from external
+   * services that is still stored with mentions is never returned.
    *
    * @param document The document or revision to convert
    * @param options Options for the conversion
@@ -152,7 +153,9 @@ export class DocumentHelper {
         !options?.signedUrls &&
         !options?.internalUrlBase
       ) {
-        return document.content;
+        return ProsemirrorDataHelper.removeUnfurledMentionData(
+          document.content
+        );
       }
       doc = Node.fromJSON(schema, document.content);
     } else if ("state" in document && document.state) {
@@ -185,7 +188,7 @@ export class DocumentHelper {
       data = ProsemirrorHelper.removeMarks(data, options.removeMarks);
     }
 
-    return data;
+    return ProsemirrorDataHelper.removeUnfurledMentionData(data);
   }
 
   /**

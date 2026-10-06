@@ -120,7 +120,11 @@ class Integration<T = unknown> extends ParanoidModel<
         return {
           url: settings?.url,
           github: settings?.github,
-          gitlab: settings?.gitlab,
+          // Only the instance URL and state are needed by clients, account
+          // details of a legacy connection must not be visible to every member.
+          gitlab: settings?.gitlab
+            ? { url: settings.gitlab.url, pending: settings.gitlab.pending }
+            : undefined,
           linear: settings?.linear,
           diagrams: settings?.diagrams,
         };
@@ -142,7 +146,7 @@ class Integration<T = unknown> extends ParanoidModel<
       case IntegrationType.LinkedAccount: {
         const settings = this
           .settings as IntegrationSettings<IntegrationType.LinkedAccount>;
-        return { figma: settings?.figma };
+        return { figma: settings?.figma, gitlab: settings?.gitlab };
       }
       default:
         return undefined;

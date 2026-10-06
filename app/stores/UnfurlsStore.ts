@@ -17,13 +17,13 @@ class UnfurlsStore extends Store<Unfurl<any>> {
     makeObservable(this);
   }
 
-  fetchUnfurl = async <UnfurlType extends UnfurlResourceType>({
+  fetchUnfurl = async ({
     url,
     documentId,
   }: {
     url: string;
     documentId?: string;
-  }): Promise<Unfurl<UnfurlType> | undefined> => {
+  }): Promise<Unfurl<UnfurlResourceType> | undefined> => {
     try {
       const protocol = new URL(url).protocol;
       if (
@@ -40,35 +40,46 @@ class UnfurlsStore extends Store<Unfurl<any>> {
     const unfurl = this.get(url);
 
     if (unfurl) {
-      this.refetch({ unfurl: unfurl as Unfurl<UnfurlType>, documentId });
+      // A result fetched a while ago is shown while it is fetched again.
+      if (new Date(unfurl.fetchedAt) < subMinutes(new Date(), 5)) {
+        void this.unfurl({ url, documentId });
+      }
       return unfurl;
     }
 
-    return this.unfurl<UnfurlType>({ url, documentId });
-  };
-
-  private refetch = <UnfurlType extends UnfurlResourceType>({
-    unfurl,
-    documentId,
-  }: {
-    unfurl: Unfurl<UnfurlType>;
-    documentId?: string;
-  }) => {
-    const fiveMinutesAgo = subMinutes(new Date(), 5);
-
-    if (new Date(unfurl.fetchedAt) < fiveMinutesAgo) {
-      void this.unfurl({ url: unfurl.id, documentId });
-    }
+    return this.unfurl({ url, documentId });
   };
 
   @action
-  private unfurl = async <UnfurlType extends UnfurlResourceType>({
+  private unfurl = ({
     url,
     documentId,
   }: {
     url: string;
     documentId?: string;
-  }): Promise<Unfurl<UnfurlType> | undefined> => {
+  }): Promise<Unfurl<UnfurlResourceType> | undefined> => {
+    // Mentions of the same url share a single request.
+    const key = `${url}:${documentId ?? ""}`;
+    const pending = this.requests.get(key);
+    if (pending) {
+      return pending;
+    }
+
+    const request = this.request({ url, documentId }).finally(() =>
+      this.requests.delete(key)
+    );
+    this.requests.set(key, request);
+    return request;
+  };
+
+  @action
+  private request = async ({
+    url,
+    documentId,
+  }: {
+    url: string;
+    documentId?: string;
+  }): Promise<Unfurl<UnfurlResourceType> | undefined> => {
     try {
       this.isFetching = true;
 
@@ -77,8 +88,10 @@ class UnfurlsStore extends Store<Unfurl<any>> {
         documentId,
       });
 
-      // unfurls can succeed with no data.
+      // unfurls can succeed with no data, in which case the user can no
+      // longer see the resource, so previously fetched data is discarded.
       if (!data) {
+        this.remove(url);
         return;
       }
 
@@ -87,7 +100,7 @@ class UnfurlsStore extends Store<Unfurl<any>> {
         type: data.type,
         fetchedAt: new Date().toISOString(),
         data,
-      } as Unfurl<UnfurlType>);
+      });
     } catch (err) {
       Logger.warn("Failed to unfurl url", {
         url,

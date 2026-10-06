@@ -1,3 +1,4 @@
+import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import {
   ProsemirrorHelper,
   type CommentMark,
@@ -30,7 +31,8 @@ export default function present(
 
   return {
     id: comment.id,
-    data: comment.data,
+    // Data unfurled from external services may still be stored with mentions.
+    data: ProsemirrorDataHelper.removeUnfurledMentionData(comment.data),
     documentId: comment.documentId,
     parentCommentId: comment.parentCommentId,
     createdBy: presentUser(comment.createdBy),

@@ -125,6 +125,42 @@ describe("DocumentHelper", () => {
       expect(marks?.map((mark) => mark.type)).toEqual(["link"]);
       expect(marks?.[0].attrs?.href).toBe("/s/share-123/doc/internal-123");
     });
+
+    it("should never return unfurled data stored before it was removed on save", async () => {
+      const href = "https://gitlab.com/group/project/-/issues/1";
+      const document = await buildDocument();
+      // Set without saving, as content stored by an earlier version.
+      document.content = {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "mention",
+                attrs: {
+                  id: "mention-1",
+                  type: "issue",
+                  modelId: "model-1",
+                  label: "Secret issue title",
+                  href,
+                  unfurl: { title: "Secret issue title" },
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      for (const result of [
+        await DocumentHelper.toJSON(document),
+        await DocumentHelper.toJSON(document, { removeMarks: ["comment"] }),
+      ]) {
+        const attrs = result.content?.[0].content?.[0].attrs;
+        expect(attrs?.label).toBe(href);
+        expect(attrs).not.toHaveProperty("unfurl");
+      }
+    });
   });
 
   describe("toHTML", () => {

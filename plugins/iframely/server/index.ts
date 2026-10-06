@@ -19,7 +19,13 @@ if (enabled) {
   PluginManager.add([
     {
       type: Hook.UnfurlProvider,
-      value: { unfurl: Iframely.unfurl, cacheExpiry: Day.seconds },
+      value: {
+        unfurl: Iframely.unfurl,
+        cacheExpiry: Day.seconds,
+        // Resources are fetched anonymously, so the result is the same for
+        // every user.
+        cacheScope: "team",
+      },
 
       // Make sure this is last in the stack to be evaluated after all other unfurl providers
       priority: PluginPriority.VeryLow,

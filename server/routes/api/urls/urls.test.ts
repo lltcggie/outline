@@ -534,6 +534,31 @@ Install instructions here.`
 
     expect(res.status).toEqual(204);
   });
+
+  it("should share cached anonymous unfurls within the team", async () => {
+    const url = `https://cached.example.com/${randomString(8)}`;
+    const otherUser = await buildUser({ teamId: user.teamId });
+    (Iframely.requestResource as Mock).mockClear();
+
+    (Iframely.requestResource as Mock).mockResolvedValueOnce({
+      url,
+      type: "rich",
+      meta: { title: "Public page" },
+      links: {},
+    });
+    const res = await server.post("/api/urls.unfurl", user, {
+      body: { url },
+    });
+    expect(res.status).toEqual(200);
+
+    // Iframely fetches anonymously, so the result is reused for other users.
+    const otherRes = await server.post("/api/urls.unfurl", otherUser, {
+      body: { url },
+    });
+    expect(otherRes.status).toEqual(200);
+    expect((await otherRes.json()).title).toEqual("Public page");
+    expect((Iframely.requestResource as Mock).mock.calls).toHaveLength(1);
+  });
 });
 
 describe("#urls.checkEmbed", () => {
