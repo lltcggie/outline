@@ -1,4 +1,4 @@
-import { IsOptional } from "class-validator";
+import { IsOptional, IsUrl } from "class-validator";
 import { Environment } from "@server/env";
 import { Public } from "@server/utils/decorators/Public";
 import environment from "@server/utils/environment";
@@ -20,6 +20,20 @@ class GitLabPluginEnvironment extends Environment {
   public GITLAB_CLIENT_SECRET = this.toOptionalString(
     environment.GITLAB_CLIENT_SECRET
   );
+
+  /**
+   * The URL of a self-managed GitLab instance. Links to it in Markdown, such as
+   * content created through the API or MCP, are recognized as issue, merge
+   * request or project mentions. The instance is otherwise configured in the
+   * workspace settings.
+   */
+  @IsOptional()
+  @IsUrl({
+    protocols: ["https"],
+    require_protocol: true,
+    require_tld: false,
+  })
+  public GITLAB_URL = this.toOptionalString(environment.GITLAB_URL);
 }
 
 export default new GitLabPluginEnvironment();

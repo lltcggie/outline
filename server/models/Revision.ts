@@ -11,8 +11,10 @@ import {
   IsNumeric,
   Length as SimpleLength,
   BeforeDestroy,
+  BeforeSave,
 } from "sequelize-typescript";
 import type { ProsemirrorData, SourceMetadata } from "@shared/types";
+import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import { DocumentValidation, RevisionValidation } from "@shared/validations";
 import type { APIContext } from "@server/types";
 import Document from "./Document";
@@ -145,6 +147,17 @@ class Revision extends ParanoidModel<
   }
 
   // hooks
+
+  @BeforeSave
+  static removeUnfurledMentionData(model: Revision) {
+    // Unfurled data depends on the access of whoever fetched it, see Document.
+    // The same reference is returned when nothing changed.
+    if (model.changed("content")) {
+      model.content = ProsemirrorDataHelper.removeUnfurledMentionData(
+        model.content
+      );
+    }
+  }
 
   @BeforeDestroy
   static async clearData(model: Revision) {

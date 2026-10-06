@@ -16,6 +16,8 @@
   <a href="https://translate.getoutline.com/project/outline" alt="Localized"><img src="https://badges.crowdin.net/outline/localized.svg"></a>
 </p>
 
+> **Note:** This is a fork with changes for self-hosted use. Fork-specific setup and migration steps are documented in [docs/FORK.md](docs/FORK.md).
+
 This is the source code that runs [**Outline**](https://www.getoutline.com) and all the associated services. If you want to use Outline then you don't need to run this code, A hosted version of the app is offered at [getoutline.com](https://www.getoutline.com). You can also find documentation on using Outline in [our guide](https://docs.getoutline.com/s/guide).
 
 If you'd like to run your own copy of Outline or contribute to development then this is the place for you.

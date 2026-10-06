@@ -60,7 +60,17 @@ type PluginValueMap = {
   [Hook.SearchProvider]: BaseSearchProvider;
   [Hook.Task]: typeof BaseTask<object>;
   [Hook.Uninstall]: UninstallSignature;
-  [Hook.UnfurlProvider]: { unfurl: UnfurlSignature; cacheExpiry: number };
+  [Hook.UnfurlProvider]: {
+    unfurl: UnfurlSignature;
+    cacheExpiry: number;
+    /**
+     * Whether results are cached per user or shared within the team. Providers
+     * that fetch with the user's own access, or whose result otherwise depends
+     * on the user, must use "user", which is the default. A "team" provider is
+     * only asked when no "user" provider recognized the url.
+     */
+    cacheScope?: "user" | "team";
+  };
   [Hook.GroupSyncProvider]: { id: string; provider: GroupSyncProvider };
 };
 

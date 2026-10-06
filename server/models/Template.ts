@@ -19,11 +19,13 @@ import {
   HasMany,
   Unique,
   Scopes,
+  BeforeSave,
   BeforeValidate,
   IsDate,
 } from "sequelize-typescript";
 import slugify from "slugify";
 import type { ProsemirrorData } from "@shared/types";
+import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import { UrlHelper } from "@shared/utils/UrlHelper";
 import { DocumentValidation } from "@shared/validations";
 import { generateUrlId } from "@server/utils/url";
@@ -214,6 +216,17 @@ class Template extends ParanoidModel<
    */
   get isDraft() {
     return !this.publishedAt;
+  }
+
+  @BeforeSave
+  static removeUnfurledMentionData(model: Template) {
+    // Unfurled data depends on the access of whoever fetched it, see Document.
+    // The same reference is returned when nothing changed.
+    if (model.changed("content")) {
+      model.content = ProsemirrorDataHelper.removeUnfurledMentionData(
+        model.content
+      );
+    }
   }
 
   @BeforeValidate

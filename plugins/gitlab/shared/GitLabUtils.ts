@@ -7,6 +7,8 @@ export const GitLabOAuthNonceCookie = "gitlabOAuthNonce";
 export type OAuthState = {
   teamId: string;
   nonce: string;
+  /** The workspace integration whose OAuth application is used. */
+  integrationId?: string;
 };
 
 /** The kind of namespace a resource belongs to. */
@@ -130,6 +132,52 @@ export class GitLabUtils {
   }
 
   /**
+   * Whether two GitLab instance URLs refer to the same instance.
+   *
+   * @param a the first instance URL, gitlab.com when unset.
+   * @param b the second instance URL, gitlab.com when unset.
+   * @returns true if both refer to the same instance.
+   */
+  public static isSameInstance(a?: string, b?: string): boolean {
+    return this.normalizeInstanceUrl(a) === this.normalizeInstanceUrl(b);
+  }
+
+  /**
+   * Normalizes a GitLab instance URL so that equivalent URLs compare equal,
+   * the host is lowercased, and a default port, path and trailing slashes are
+   * removed. An instance is identified by its host alone, as resource URLs are
+   * parsed from the root of the host, see `parseUrl` and `isInstanceUrl`.
+   *
+   * @param url the instance URL, gitlab.com when unset.
+   * @returns the normalized instance URL.
+   */
+  public static normalizeInstanceUrl(url?: string): string {
+    const value = this.getGitlabUrl(url);
+    try {
+      return new URL(value).origin;
+    } catch {
+      return value.replace(/\/+$/, "").toLowerCase();
+    }
+  }
+
+  /**
+   * Whether a URL is hosted on the given GitLab instance.
+   *
+   * @param url the URL to check.
+   * @param customUrl optional custom GitLab URL from integration settings.
+   * @returns true if the URL is on the instance's host.
+   */
+  public static isInstanceUrl(url: string, customUrl?: string): boolean {
+    try {
+      return (
+        new URL(url).hostname === new URL(this.getGitlabUrl(customUrl)).hostname
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Generates the installation request URL.
    *
    * @returns The URL for installation requests.
@@ -164,17 +212,11 @@ export class GitLabUtils {
         url: string;
       }
     | undefined {
-    let parsed: URL;
-
-    try {
-      parsed = new URL(url);
-      if (parsed.hostname !== new URL(this.getGitlabUrl(customUrl)).hostname) {
-        return;
-      }
-    } catch {
+    if (!this.isInstanceUrl(url, customUrl)) {
       return;
     }
 
+    const parsed = new URL(url);
     const { pathname } = parsed;
     const separatorIndex = pathname.indexOf(this.separator);
 

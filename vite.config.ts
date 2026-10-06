@@ -89,20 +89,6 @@ export default ({ mode }: ConfigEnv) =>
               },
             },
             {
-              urlPattern: /api\/urls\.unfurl$/,
-              handler: "CacheOnly",
-              options: {
-                cacheName: "unfurl-cache",
-                expiration: {
-                  maxEntries: 100,
-                  maxAgeSeconds: 60 * 60,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
               // Limited to images, as media and PDFs are loaded with byte range
               // requests which Safari cannot play back when the response is
               // served by a service worker.

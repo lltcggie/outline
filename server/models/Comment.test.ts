@@ -1,6 +1,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { MentionType } from "@shared/types";
-import { buildComment, buildDocument, buildUser } from "@server/test/factories";
+import {
+  buildComment,
+  buildDocument,
+  buildUnfurledMentionContent,
+  buildUser,
+} from "@server/test/factories";
 import Comment from "./Comment";
 
 describe("Comment", () => {
@@ -284,5 +289,25 @@ describe("Comment", () => {
         })
       ).rejects.toThrow("Parent comment must belong to the same document");
     });
+  });
+});
+
+describe("#removeUnfurledMentionData", () => {
+  it("should not store unfurled data", async () => {
+    const unfurledHref = "https://gitlab.example.com/secret/p/-/issues/1";
+    const user = await buildUser();
+    const document = await buildDocument({
+      userId: user.id,
+      teamId: user.teamId,
+    });
+    const comment = await Comment.create({
+      documentId: document.id,
+      createdById: user.id,
+      data: buildUnfurledMentionContent({ href: unfurledHref }),
+    });
+    await comment.reload();
+
+    expect(JSON.stringify(comment.data)).not.toContain("unfurl");
+    expect(comment.toPlainText()).toBe(unfurledHref);
   });
 });

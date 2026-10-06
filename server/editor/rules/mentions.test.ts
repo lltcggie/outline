@@ -1,5 +1,6 @@
 import type { Node } from "prosemirror-model";
 import { MentionType } from "@shared/types";
+import gitlabEnv from "plugins/gitlab/server/env";
 import { parser } from "..";
 
 function firstMention(markdown: string): Node | undefined {
@@ -64,9 +65,47 @@ describe("mention type rule", () => {
     expect(mention?.attrs.href).toBeUndefined();
   });
 
+  it("should keep the type of a mention:// link carrying its url", () => {
+    const href = "https://github.com/acme/infra/issues/2";
+    const mention = firstMention(
+      `@[${href}](mention://a1b2c3d4-e5f6-7890-abcd-ef1234567890/url/f0e1d2c3-b4a5-6789-0abc-def123456789?href=${encodeURIComponent(href)})`
+    );
+
+    // The type is kept as written, even though the url is recognized as an
+    // issue, so that a mention never changes when markdown round-trips.
+    expect(mention?.attrs.type).toBe(MentionType.URL);
+    expect(mention?.attrs.href).toBe(href);
+  });
+
   it("should not convert a link without an @ prefix", () => {
     expect(
       firstMention("[Fix parser](https://github.com/acme/infra/issues/2)")
     ).toBeUndefined();
+  });
+
+  describe("self-managed GitLab", () => {
+    const original = gitlabEnv.GITLAB_URL;
+
+    afterEach(() => {
+      gitlabEnv.GITLAB_URL = original;
+    });
+
+    it("should resolve an issue link when GITLAB_URL is configured", () => {
+      gitlabEnv.GITLAB_URL = "https://gitlab.example.com";
+      const mention = firstMention(
+        "@[x](https://gitlab.example.com/secret/p/-/issues/1)"
+      );
+
+      expect(mention?.attrs.type).toBe(MentionType.Issue);
+    });
+
+    it("should leave the link generic when GITLAB_URL is not configured", () => {
+      gitlabEnv.GITLAB_URL = undefined;
+      const mention = firstMention(
+        "@[x](https://gitlab.example.com/secret/p/-/issues/1)"
+      );
+
+      expect(mention?.attrs.type).toBe(MentionType.URL);
+    });
   });
 });

@@ -20,7 +20,12 @@ function resolveMentionTypes(state: StateCore) {
     }
 
     for (const child of token.children) {
-      const href = child.type === "mention" ? child.attrGet("href") : null;
+      // Only mentions created from external links have an unknown type, the
+      // type of a mention:// reference is kept as written.
+      const href =
+        child.type === "mention" && child.meta?.resolveType
+          ? child.attrGet("href")
+          : null;
       if (!href) {
         continue;
       }
