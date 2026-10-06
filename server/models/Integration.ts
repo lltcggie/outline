@@ -215,14 +215,21 @@ class Integration<T = unknown> extends ParanoidModel<
    */
   private presentPluginSettings(viewer?: User) {
     const settings = this.settings as Record<string, unknown> | null;
-    const keys = PluginManager.getHooks(Hook.IntegrationSettings)
-      .filter(
-        (hook) =>
-          hook.value.service === this.service &&
-          (!viewer?.isGuest || hook.value.visibleToGuests)
+    const hooks = PluginManager.getHooks(Hook.IntegrationSettings).filter(
+      (hook) =>
+        hook.value.service === this.service &&
+        (!viewer?.isGuest || hook.value.visibleToGuests)
+    );
+    return Object.fromEntries(
+      hooks.flatMap((hook) =>
+        hook.value.keys.map((key) => [
+          key,
+          hook.value.present
+            ? hook.value.present(key, settings?.[key], this)
+            : settings?.[key],
+        ])
       )
-      .flatMap((hook) => hook.value.keys);
-    return Object.fromEntries(keys.map((key) => [key, settings?.[key]]));
+    );
   }
 
   // hooks

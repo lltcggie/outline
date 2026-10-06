@@ -30,6 +30,14 @@ export default class IntegrationDeletedProcessor extends BaseProcessor {
       await CacheHelper.clearData(
         RedisPrefixHelper.getUnfurlPrefix(integration.teamId)
       );
+    } else if (integration.type === IntegrationType.LinkedAccount) {
+      // The user's unfurls were fetched with the removed account.
+      await CacheHelper.clearData(
+        RedisPrefixHelper.getUnfurlPrefix(
+          integration.teamId,
+          integration.userId
+        )
+      );
     }
 
     await integration.destroy({ force: true });

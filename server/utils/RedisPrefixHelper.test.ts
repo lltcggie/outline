@@ -5,10 +5,31 @@ describe("RedisPrefixHelper", () => {
     it("should generate key with teamId, userId and url", () => {
       const result = RedisPrefixHelper.getUnfurlKey(
         "team-123",
-        "user-123",
+        "user-1",
         "https://example.com"
       );
-      expect(result).toBe("unfurl:team-123:user-123:https://example.com");
+      expect(result).toBe("unfurl:team-123:user-1:https://example.com");
+    });
+
+    it("should generate different keys for different users", () => {
+      const url = "https://example.com";
+      expect(
+        RedisPrefixHelper.getUnfurlKey("team-123", "user-1", url)
+      ).not.toBe(RedisPrefixHelper.getUnfurlKey("team-123", "user-2", url));
+    });
+
+    it("should generate a shared key without a user", () => {
+      const url = "https://example.com";
+      expect(RedisPrefixHelper.getUnfurlKey("team-123", undefined, url)).toBe(
+        "unfurl:team-123:shared:https://example.com"
+      );
+      expect(
+        RedisPrefixHelper.getUnfurlKey("team-123", undefined, url)
+      ).not.toMatch(
+        new RegExp(
+          `^${RedisPrefixHelper.getUnfurlPrefix("team-123", "user-1")}`
+        )
+      );
     });
 
     it("should handle special characters in url", () => {
@@ -18,24 +39,26 @@ describe("RedisPrefixHelper", () => {
         "unfurl:team-789:user-1:https://example.com/path?query=value&other=123"
       );
     });
-
-    it("should start with the team prefix", () => {
-      const result = RedisPrefixHelper.getUnfurlKey("team-1", "user-1", "url");
-      expect(
-        result.startsWith(RedisPrefixHelper.getUnfurlPrefix("team-1"))
-      ).toBe(true);
-      expect(result.startsWith(RedisPrefixHelper.getUnfurlPrefix())).toBe(true);
-    });
   });
 
   describe("getUnfurlPrefix", () => {
-    it("should generate prefix with teamId", () => {
+    it("should scope the prefix to a user", () => {
+      const prefix = RedisPrefixHelper.getUnfurlPrefix("team-123", "user-1");
+      expect(
+        RedisPrefixHelper.getUnfurlKey("team-123", "user-1", "https://a.com")
+      ).toMatch(new RegExp(`^${prefix}`));
+      expect(
+        RedisPrefixHelper.getUnfurlKey("team-123", "user-2", "https://a.com")
+      ).not.toMatch(new RegExp(`^${prefix}`));
+    });
+
+    it("should scope the prefix to a team", () => {
       expect(RedisPrefixHelper.getUnfurlPrefix("team-456")).toBe(
         "unfurl:team-456:"
       );
     });
 
-    it("should generate prefix for all teams", () => {
+    it("should match all teams when no team is given", () => {
       expect(RedisPrefixHelper.getUnfurlPrefix()).toBe("unfurl:");
     });
   });

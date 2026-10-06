@@ -15,6 +15,8 @@ PluginManager.add([
       icon: Icon,
       description:
         "Connect your GitLab account to Outline to enable rich, real-time issue, merge request, and project previews inside documents.",
+      // Every member links their own account, previews use their own access.
+      enabled: () => true,
       component: createLazyComponent(() => import("./Settings")),
     },
   },
@@ -26,6 +28,11 @@ PluginManager.add([
       isMentionable: (url, integration) => {
         const settings =
           integration.settings as IntegrationSettings<IntegrationType.Embed>;
+        // An instance that is still being connected is not unfurled.
+        if (settings.gitlab?.pending) {
+          return false;
+        }
+
         let hostname: string | undefined;
         try {
           hostname = settings.gitlab?.url

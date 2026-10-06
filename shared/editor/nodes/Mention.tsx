@@ -1,4 +1,3 @@
-import { isMatch } from "es-toolkit/compat";
 import { sanitizeUrl } from "../../utils/urls";
 import type Token from "markdown-it/lib/token.mjs";
 import type {
@@ -12,11 +11,11 @@ import { NodeSelection, TextSelection } from "prosemirror-state";
 import type { Primitive } from "utility-types";
 import { v4 as uuidv4 } from "uuid";
 import env from "../../env";
-import type { UnfurlResponse } from "../../types";
 import { t } from "i18next";
 import { AlignImageRightIcon, EmailIcon } from "outline-icons";
-import { MentionDisplay, MentionType, UnfurlResourceType } from "../../types";
+import { MentionDisplay, MentionType } from "../../types";
 import { dateToReadable } from "../../utils/date";
+import { ProsemirrorDataHelper } from "../../utils/ProsemirrorDataHelper";
 import {
   MentionCollection,
   MentionDocument,
@@ -68,20 +67,52 @@ function dateMentionLabel(node: ProsemirrorNode): string {
  */
 function isExternalMention(type: MentionType): boolean {
   return (
-    type === MentionType.Issue ||
-    type === MentionType.PullRequest ||
-    type === MentionType.Project
+    ProsemirrorDataHelper.isUnfurledMention(type) && type !== MentionType.URL
   );
 }
 
-/** The mention type that represents each kind of unfurled resource. */
-const MentionTypeForResource: Partial<Record<UnfurlResourceType, MentionType>> =
-  {
-    [UnfurlResourceType.Issue]: MentionType.Issue,
-    [UnfurlResourceType.PR]: MentionType.PullRequest,
-    [UnfurlResourceType.Project]: MentionType.Project,
-    [UnfurlResourceType.URL]: MentionType.URL,
-  };
+/**
+ * The text to display for a mention outside of the editor. Mentions of
+ * external resources only ever show their URL, the title of the resource
+ * depends on the permissions of whoever unfurled it and must not be persisted.
+ *
+ * @param node the mention node.
+ * @returns the text that represents the mention.
+ */
+function mentionLabel(node: ProsemirrorNode): string {
+  if (node.attrs.type === MentionType.Date) {
+    return dateMentionLabel(node);
+  }
+  const cleaned = ProsemirrorDataHelper.getCleanedMentionAttrs(node.attrs);
+  return cleaned ? String(cleaned.label) : node.attrs.label;
+}
+
+/**
+ * Encodes the URL of an external mention as the `href` query parameter of a
+ * mention:// reference, so that it is kept in markdown staying within Outline
+ * together with the type and ids of the mention.
+ *
+ * @param node the mention node.
+ * @returns the query string, or an empty string when there is no URL.
+ */
+function mentionHrefQuery(node: ProsemirrorNode): string {
+  if (!ProsemirrorDataHelper.isUnfurledMention(node.attrs.type)) {
+    return "";
+  }
+  const href = ProsemirrorDataHelper.getExternalHref(
+    sanitizeUrl(node.attrs.href)
+  );
+  if (!href) {
+    return "";
+  }
+  // Parentheses are not encoded by encodeURIComponent, but would end the link
+  // destination in markdown.
+  const encoded = encodeURIComponent(href).replace(
+    /[()]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+  return `?href=${encoded}`;
+}
 
 export default class Mention extends Node {
   get name() {
@@ -98,10 +129,7 @@ export default class Mention extends Node {
       if (node.attrs.type === MentionType.User) {
         return `@${node.attrs.label}`;
       }
-      if (node.attrs.type === MentionType.Date) {
-        return dateMentionLabel(node);
-      }
-      return node.attrs.label;
+      return mentionLabel(node);
     };
 
     return {
@@ -146,23 +174,24 @@ export default class Mention extends Node {
               return false;
             }
 
-            return {
+            const href = dom.getAttribute("href");
+            const attrs = {
               type,
               modelId,
               actorId: dom.dataset.actorid,
               label: dom.innerText,
               id: dom.id,
-              anchorId:
-                dom.dataset.anchorId ?? dom.getAttribute("href")?.split("#")[1],
-              href: dom.getAttribute("href"),
-              unfurl: dom.dataset.unfurl
-                ? JSON.parse(dom.dataset.unfurl)
-                : undefined,
+              anchorId: dom.dataset.anchorId ?? href?.split("#")[1],
+              href,
               display:
                 dom.dataset.display === MentionDisplay.Card
                   ? MentionDisplay.Card
                   : undefined,
             };
+
+            // Unfurled data is never read from the DOM, pasted or imported HTML
+            // may carry the title fetched with another user's access.
+            return ProsemirrorDataHelper.getCleanedMentionAttrs(attrs) ?? attrs;
           },
         },
       ],
@@ -199,7 +228,6 @@ export default class Mention extends Node {
           "data-url": isExternalMention(node.attrs.type)
             ? sanitizeUrl(node.attrs.href)
             : `mention://${node.attrs.id}/${node.attrs.type}/${node.attrs.modelId}`,
-          "data-unfurl": JSON.stringify(node.attrs.unfurl),
           "data-display":
             node.attrs.display === MentionDisplay.Card
               ? MentionDisplay.Card
@@ -222,33 +250,13 @@ export default class Mention extends Node {
       case MentionType.Collection:
         return <MentionCollection {...props} />;
       case MentionType.Issue:
-        return (
-          <MentionIssue
-            {...props}
-            onChangeUnfurl={this.handleChangeUnfurl(props)}
-          />
-        );
+        return <MentionIssue {...props} />;
       case MentionType.PullRequest:
-        return (
-          <MentionPullRequest
-            {...props}
-            onChangeUnfurl={this.handleChangeUnfurl(props)}
-          />
-        );
+        return <MentionPullRequest {...props} />;
       case MentionType.Project:
-        return (
-          <MentionProject
-            {...props}
-            onChangeUnfurl={this.handleChangeUnfurl(props)}
-          />
-        );
+        return <MentionProject {...props} />;
       case MentionType.URL:
-        return (
-          <MentionURL
-            {...props}
-            onChangeUnfurl={this.handleChangeUnfurl(props)}
-          />
-        );
+        return <MentionURL {...props} />;
       case MentionType.Date:
         return (
           <MentionDate {...props} onChangeDate={this.handleChangeDate(props)} />
@@ -486,8 +494,7 @@ export default class Mention extends Node {
     const mId = node.attrs.modelId;
     // Date mentions store a machine-readable value, so the label is derived to
     // keep the serialized output legible outside of the editor.
-    const label =
-      mType === MentionType.Date ? dateMentionLabel(node) : node.attrs.label;
+    const label = mentionLabel(node);
     const id = node.attrs.id;
     const isCard = node.attrs.display === MentionDisplay.Card;
 
@@ -504,7 +511,7 @@ export default class Mention extends Node {
       state.write(`${isCard ? "@" : ""}[${label}](${href}${title})`);
     } else if (
       (state.options.commonMark || isCard) &&
-      (isExternalMention(mType) || mType === MentionType.URL) &&
+      ProsemirrorDataHelper.isUnfurledMention(mType) &&
       node.attrs.href
     ) {
       // Markdown that leaves Outline cannot resolve a mention:// reference, so
@@ -514,8 +521,11 @@ export default class Mention extends Node {
       state.write(`@[${label}](${sanitizeUrl(node.attrs.href)}${title})`);
     } else {
       // Keep the mention:// format for everything else, it round-trips back
-      // into a live mention through Outline's own parser.
-      state.write(`@[${label}](mention://${id}/${mType}/${mId}${title})`);
+      // into a live mention through Outline's own parser. The URL of an
+      // external mention is carried along so that it is not lost.
+      state.write(
+        `@[${label}](mention://${id}/${mType}/${mId}${mentionHrefQuery(node)}${title})`
+      );
     }
   }
 
@@ -560,62 +570,5 @@ export default class Mention extends Node {
         label: modelId,
       });
       view.dispatch(transaction);
-    };
-
-  handleChangeUnfurl =
-    ({ getPos }: { node: ProsemirrorNode; getPos: () => number | undefined }) =>
-    (unfurl: UnfurlResponse[keyof UnfurlResponse]) => {
-      const { view } = this.editor;
-      const { tr } = view.state;
-      const pos = getPos();
-      if (pos === undefined) {
-        return;
-      }
-
-      // The node may have changed while the unfurl was loading, for example
-      // when it was switched to a card, so the current node is used.
-      const node = tr.doc.nodeAt(pos);
-      if (!node || node.type.name !== this.name) {
-        return;
-      }
-
-      // Only unfurls of a resource the mention can represent are stored, others
-      // such as documents depend on the viewer and change between views.
-      const unfurledType = MentionTypeForResource[unfurl.type];
-      if (!unfurledType) {
-        return;
-      }
-
-      const label =
-        unfurl.type === UnfurlResourceType.Issue ||
-        unfurl.type === UnfurlResourceType.PR ||
-        unfurl.type === UnfurlResourceType.URL
-          ? unfurl.title
-          : unfurl.type === UnfurlResourceType.Project
-            ? unfurl.name
-            : undefined;
-
-      const overrides: Record<string, unknown> = label ? { label } : {};
-      overrides.unfurl = unfurl;
-
-      // The resource an external link points at is only known once it has been
-      // unfurled, so narrow a generic URL mention to the type it turned out to
-      // be – an issue, pull request or project.
-      // Cards keep the generic URL type so their display survives the unfurl.
-      if (
-        node.attrs.type === MentionType.URL &&
-        node.attrs.display !== MentionDisplay.Card &&
-        unfurledType !== node.attrs.type
-      ) {
-        overrides.type = unfurledType;
-      }
-
-      if (!isMatch(node.attrs, overrides)) {
-        const transaction = tr.setNodeMarkup(pos, undefined, {
-          ...node.attrs,
-          ...overrides,
-        });
-        view.dispatch(transaction);
-      }
     };
 }

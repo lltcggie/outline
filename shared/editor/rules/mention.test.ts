@@ -199,6 +199,54 @@ describe("mention rule", () => {
 
       expect(mentions).toHaveLength(0);
     });
+
+    it("should keep the type and ids of an external mention carrying its href", () => {
+      const href = "https://gitlab.example.com/g/p/-/issues/1?a=1&b=(2)";
+      const result = md.parse(
+        `@[${href}](mention://inst-id/issue/model-id?href=${encodeURIComponent(
+          href
+        )
+          .replace("(", "%28")
+          .replace(")", "%29")})`,
+        {}
+      );
+      const mentions = findMentionTokens(result);
+
+      expect(mentions).toHaveLength(1);
+      expect(mentions[0]).toMatchObject({
+        id: "inst-id",
+        type: MentionType.Issue,
+        modelId: "model-id",
+        href,
+      });
+    });
+
+    it("should ignore an href with an unsupported protocol", () => {
+      const result = md.parse(
+        `@[x](mention://inst-id/issue/model-id?href=${encodeURIComponent(
+          "javascript:alert(1)"
+        )})`,
+        {}
+      );
+      const mentions = findMentionTokens(result);
+
+      expect(mentions).toHaveLength(1);
+      expect(mentions[0].type).toBe(MentionType.Issue);
+      expect(mentions[0].href).toBeNull();
+    });
+
+    it("should ignore an href on an internal mention", () => {
+      const result = md.parse(
+        `@[Jane](mention://inst-id/user/model-id?href=${encodeURIComponent(
+          "https://example.com"
+        )})`,
+        {}
+      );
+      const mentions = findMentionTokens(result);
+
+      expect(mentions[0].type).toBe(MentionType.User);
+      expect(mentions[0].href).toBeNull();
+    });
   });
 
   describe("rendering", () => {

@@ -40,6 +40,15 @@ export const GitLabConnectSchema = BaseSchema.extend({
 
 export type GitLabConnectReq = z.infer<typeof GitLabConnectSchema>;
 
+export const GitLabAuthorizeSchema = BaseSchema.extend({
+  body: z.object({
+    /** The workspace integration whose OAuth application is used. */
+    integrationId: z.uuid(),
+  }),
+});
+
+export type GitLabAuthorizeReq = z.infer<typeof GitLabAuthorizeSchema>;
+
 export const GitLabSettingsSchema = z.object({
   gitlab: z.object({
     url: z.url().optional(),

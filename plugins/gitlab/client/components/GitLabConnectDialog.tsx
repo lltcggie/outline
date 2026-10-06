@@ -70,7 +70,11 @@ function GitLabConnectDialog() {
       <form onSubmit={handleConnectCustom}>
         <Flex column gap={12}>
           <Text as="p" type="secondary">
-            <Trans>Enter the details for your GitLab instance.</Trans>
+            <Trans>
+              Enter the details for your GitLab instance. Changing the OAuth
+              application of a connected instance removes the GitLab accounts
+              linked by all members.
+            </Trans>
           </Text>
           <Input
             label={t("GitLab URL")}

@@ -4,6 +4,7 @@ import type Token from "markdown-it/lib/token.mjs";
 import { v4 as uuidv4 } from "uuid";
 import isUUID from "validator/lib/isUUID";
 import { MentionDisplay, MentionType } from "../../types";
+import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import parseMentionUrl from "@shared/utils/parseMentionUrl";
 import { sanitizeUrl } from "@shared/utils/urls";
 
@@ -19,23 +20,6 @@ function isMentionHref(href: string) {
 }
 
 /**
- * Parse an href that points at an external resource that can be represented as
- * a mention.
- *
- * @param href the URL string to parse.
- * @returns the parsed URL, or undefined when the href cannot be mentioned.
- */
-function parseExternalHref(href: string): URL | undefined {
-  try {
-    const url = new URL(href);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url
-      : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /** Matches the links that document and collection mentions are written as. */
 const internalHrefRegex = /^\/(doc|collection)\/([^/#?]+)(?:#(.+))?$/;
 
@@ -76,14 +60,28 @@ function parseMentionHref(href: string): {
   id: string;
   type: string;
   modelId: string;
+  externalHref?: string;
 } {
-  const { id, mentionType, modelId } = parseMentionUrl(href);
+  const {
+    id,
+    mentionType,
+    modelId,
+    href: externalHref,
+  } = parseMentionUrl(href);
 
   if (!mentionType || !modelId) {
     throw new Error(`Invalid mention href: ${href}`);
   }
 
-  return { id: id ?? uuidv4(), type: mentionType, modelId };
+  return {
+    id: id ?? uuidv4(),
+    type: mentionType,
+    modelId,
+    // Only mentions of external resources point at a URL.
+    externalHref: ProsemirrorDataHelper.isUnfurledMention(mentionType)
+      ? ProsemirrorDataHelper.getExternalHref(externalHref)
+      : undefined,
+  };
 }
 
 const renderMention = (md: MarkdownIt) => (tokens: Token[], idx: number) => {
@@ -144,7 +142,7 @@ function parseMentions(state: StateCore) {
           attr &&
           attr[0] === "href" &&
           (isMentionHref(attr[1]) ||
-            parseExternalHref(attr[1]) ||
+            ProsemirrorDataHelper.getExternalHref(attr[1]) ||
             parseInternalHref(attr[1]))
         )
       ) {
@@ -166,8 +164,6 @@ function parseMentions(state: StateCore) {
       const mentionToken = new state.Token("mention", "", 0);
       const isMention = isMentionHref(href);
       const internal = isMention ? undefined : parseInternalHref(href);
-      const externalUrl =
-        isMention || internal ? undefined : parseExternalHref(href);
 
       if (internal) {
         mentionToken.attrSet("id", uuidv4());
@@ -176,7 +172,8 @@ function parseMentions(state: StateCore) {
         if (internal.anchorId) {
           mentionToken.attrSet("anchorId", internal.anchorId);
         }
-      } else if (externalUrl) {
+      } else if (!isMention) {
+        // Otherwise the href is external, see canChunkComposeMentionToken.
         // External links carry their identity in the href, so the ids are
         // generated the same way a paste in the editor would. The mention is
         // generic here and is narrowed to the resource it points at by the
@@ -185,11 +182,22 @@ function parseMentions(state: StateCore) {
         mentionToken.attrSet("type", MentionType.URL);
         mentionToken.attrSet("modelId", uuidv4());
         mentionToken.attrSet("href", href);
+        // The type of the resource is not known yet and may be resolved by
+        // the services that recognize the URL.
+        mentionToken.meta = { resolveType: true };
       } else {
-        const { id, type: mType, modelId: mId } = parseMentionHref(href);
+        const {
+          id,
+          type: mType,
+          modelId: mId,
+          externalHref,
+        } = parseMentionHref(href);
         mentionToken.attrSet("id", id);
         mentionToken.attrSet("type", mType);
         mentionToken.attrSet("modelId", mId);
+        if (externalHref) {
+          mentionToken.attrSet("href", externalHref);
+        }
       }
 
       mentionToken.content = textToken.content;

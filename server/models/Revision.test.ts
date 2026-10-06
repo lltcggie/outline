@@ -1,5 +1,9 @@
 import { createContext } from "@server/context";
-import { buildDocument, buildUser } from "@server/test/factories";
+import {
+  buildDocument,
+  buildUnfurledMentionContent,
+  buildUser,
+} from "@server/test/factories";
 import Revision from "./Revision";
 
 describe("#findLatest", () => {
@@ -126,5 +130,20 @@ describe("#findAt", () => {
     expect(
       await Revision.findAt(document.id, new Date("2025-01-01T00:00:00Z"))
     ).toBeNull();
+  });
+});
+
+describe("#removeUnfurledMentionData", () => {
+  it("should not store unfurled data in content", async () => {
+    const document = await buildDocument();
+    const revision = Revision.buildFromDocument(document);
+    revision.content = buildUnfurledMentionContent();
+    await revision.save();
+    await revision.reload();
+
+    expect(JSON.stringify(revision.content)).not.toContain("unfurl");
+    expect(JSON.stringify(revision.content)).not.toContain(
+      "Secret issue title"
+    );
   });
 });

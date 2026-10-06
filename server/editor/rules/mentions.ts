@@ -21,9 +21,14 @@ function resolveMentionTypes(state: StateCore) {
     }
 
     for (const child of token.children) {
-      const href = child.type === "mention" ? child.attrGet("href") : null;
+      // Only mentions created from external links have an unknown type, the
+      // type of a mention:// reference is kept as written.
+      const href =
+        child.type === "mention" && child.meta?.resolveType
+          ? child.attrGet("href")
+          : null;
 
-      // Cards keep the generic URL type, as the client does after an unfurl.
+      // Cards keep the generic URL type, so that their display is kept.
       if (!href || child.attrGet("display") === MentionDisplay.Card) {
         continue;
       }

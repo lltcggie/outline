@@ -1,3 +1,4 @@
+import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import type { Event } from "@server/models";
 import presentUser from "./user";
 
@@ -14,7 +15,10 @@ export default function presentEvent(event: Event, isAdmin = false) {
     documentId: event.documentId,
     createdAt: event.createdAt,
     data: event.data,
-    changes: event.changes || undefined,
+    // Recorded content may still carry data unfurled from external services.
+    changes: event.changes
+      ? ProsemirrorDataHelper.removeUnfurledMentionData(event.changes)
+      : undefined,
     actor: presentUser(event.actor),
   };
 

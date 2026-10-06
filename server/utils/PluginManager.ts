@@ -7,6 +7,7 @@ import type {
   Concrete,
   EmbedIntegrationSettings,
   IntegrationService,
+  IntegrationType,
   LinkedAccountIntegrationSettings,
 } from "@shared/types";
 import type BaseEmail from "@server/emails/templates/BaseEmail";
@@ -86,6 +87,20 @@ type PluginValueMap = {
     )[];
     /** Whether guests can see the keys, which only render and edit embeds. */
     visibleToGuests?: boolean;
+    /**
+     * Narrows the stored value of a key to what is presented to clients, the
+     * stored value is presented as it is when not given.
+     *
+     * @param key the settings key that is presented.
+     * @param value the stored value of the key.
+     * @param integration the integration that the settings belong to.
+     * @returns the value presented to clients.
+     */
+    present?: (
+      key: string,
+      value: unknown,
+      integration: { type: IntegrationType }
+    ) => unknown;
     /** A schema to validate settings given through the integrations API. */
     schema?: z.ZodType<EmbedIntegrationSettings>;
   };
@@ -95,7 +110,23 @@ type PluginValueMap = {
   [Hook.SearchProvider]: BaseSearchProvider;
   [Hook.Task]: Concrete<typeof BaseTask<object>>;
   [Hook.Uninstall]: UninstallSignature;
-  [Hook.UnfurlProvider]: { unfurl: UnfurlSignature; cacheExpiry: number };
+  [Hook.UnfurlProvider]: {
+    unfurl: UnfurlSignature;
+    cacheExpiry: number;
+    /**
+     * Whether results are cached per user or shared within the team. Providers
+     * that fetch with the user's own access, or whose result otherwise depends
+     * on the user, must use "user", which is the default. A "team" provider is
+     * only asked when no "user" provider recognized the url.
+     */
+    cacheScope?: "user" | "team";
+    /**
+     * Whether resources are only ever fetched with an account that the user
+     * linked themselves, never with credentials of the workspace. Guests are
+     * only shown the results of these providers.
+     */
+    userAccess?: boolean;
+  };
   [Hook.GroupSyncProvider]: { id: string; provider: GroupSyncProvider };
 };
 

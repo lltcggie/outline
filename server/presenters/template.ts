@@ -9,7 +9,10 @@ function presentTemplate(template: Template) {
     path: template.path,
     urlId: template.urlId,
     title: template.title,
-    data: template.content ?? ProsemirrorDataHelper.getEmpty(),
+    // Data unfurled from external services may still be stored with mentions.
+    data: template.content
+      ? ProsemirrorDataHelper.removeUnfurledMentionData(template.content)
+      : ProsemirrorDataHelper.getEmpty(),
     icon: template.icon,
     color: template.color,
     createdAt: template.createdAt,

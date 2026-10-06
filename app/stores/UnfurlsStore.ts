@@ -1,5 +1,5 @@
 import { subMinutes } from "date-fns";
-import { action, makeObservable } from "mobx";
+import { action, makeObservable, override } from "mobx";
 import { errToString } from "@shared/utils/error";
 import type { UnfurlResourceType } from "@shared/types";
 import Unfurl from "~/models/Unfurl";
@@ -17,13 +17,22 @@ class UnfurlsStore extends Store<Unfurl<any>> {
     makeObservable(this);
   }
 
-  fetchUnfurl = async <UnfurlType extends UnfurlResourceType>({
+  /** Time that a url last returned no unfurl data, keyed by url. */
+  private emptyFetchedAt = new Map<string, number>();
+
+  /** Unfurl requests that are in progress, keyed by url and document. */
+  private inflight = new Map<
+    string,
+    Promise<Unfurl<UnfurlResourceType> | undefined>
+  >();
+
+  fetchUnfurl = async ({
     url,
     documentId,
   }: {
     url: string;
     documentId?: string;
-  }): Promise<Unfurl<UnfurlType> | undefined> => {
+  }): Promise<Unfurl<UnfurlResourceType> | undefined> => {
     try {
       const protocol = new URL(url).protocol;
       if (
@@ -40,74 +49,61 @@ class UnfurlsStore extends Store<Unfurl<any>> {
     const unfurl = this.get(url);
 
     if (unfurl) {
-      this.refetch({ unfurl: unfurl as Unfurl<UnfurlType>, documentId });
+      // A result fetched a while ago is shown while it is fetched again.
+      if (new Date(unfurl.fetchedAt) < subMinutes(new Date(), 5)) {
+        void this.request({ url, documentId });
+      }
       return unfurl;
     }
 
-    return this.request<UnfurlType>({ url, documentId });
+    return this.request({ url, documentId });
   };
 
-  /** Time that a url last returned no unfurl data, keyed by url. */
-  private emptyFetchedAt = new Map<string, number>();
-
-  /** Unfurl requests that are in progress, keyed by url. */
-  private inflight = new Map<
-    string,
-    Promise<Unfurl<UnfurlResourceType> | undefined>
-  >();
-
-  private refetch = <UnfurlType extends UnfurlResourceType>({
-    unfurl,
-    documentId,
-  }: {
-    unfurl: Unfurl<UnfurlType>;
-    documentId?: string;
-  }) => {
-    const fiveMinutesAgo = subMinutes(new Date(), 5);
-
-    if (new Date(unfurl.fetchedAt) < fiveMinutesAgo) {
-      void this.request({ url: unfurl.id, documentId });
-    }
-  };
+  @override
+  clear() {
+    super.clear();
+    // What the user can see may have changed, so urls are asked for again.
+    this.emptyFetchedAt.clear();
+  }
 
   /**
    * Requests an unfurl, skipping urls that recently returned no data and
    * sharing a request that is already in progress for the same url.
    */
-  private request = async <UnfurlType extends UnfurlResourceType>({
+  private request = ({
     url,
     documentId,
   }: {
     url: string;
     documentId?: string;
-  }): Promise<Unfurl<UnfurlType> | undefined> => {
+  }): Promise<Unfurl<UnfurlResourceType> | undefined> => {
     const emptyAt = this.emptyFetchedAt.get(url);
     if (emptyAt && emptyAt > subMinutes(new Date(), 5).getTime()) {
-      return;
+      return Promise.resolve(undefined);
     }
 
-    const existing = this.inflight.get(url);
+    // Mentions of the same url share a single request.
+    const key = `${url}:${documentId ?? ""}`;
+    const existing = this.inflight.get(key);
     if (existing) {
-      return existing as Promise<Unfurl<UnfurlType> | undefined>;
+      return existing;
     }
 
-    const promise = this.unfurl<UnfurlType>({ url, documentId });
-    this.inflight.set(url, promise);
-    try {
-      return await promise;
-    } finally {
-      this.inflight.delete(url);
-    }
+    const promise = this.unfurl({ url, documentId }).finally(() =>
+      this.inflight.delete(key)
+    );
+    this.inflight.set(key, promise);
+    return promise;
   };
 
   @action
-  private unfurl = async <UnfurlType extends UnfurlResourceType>({
+  private unfurl = async ({
     url,
     documentId,
   }: {
     url: string;
     documentId?: string;
-  }): Promise<Unfurl<UnfurlType> | undefined> => {
+  }): Promise<Unfurl<UnfurlResourceType> | undefined> => {
     try {
       this.isFetching = true;
 
@@ -116,9 +112,11 @@ class UnfurlsStore extends Store<Unfurl<any>> {
         documentId,
       });
 
-      // unfurls can succeed with no data.
+      // unfurls can succeed with no data, in which case the user can no
+      // longer see the resource, so previously fetched data is discarded.
       if (!data) {
         this.emptyFetchedAt.set(url, Date.now());
+        this.remove(url);
         return;
       }
 
@@ -129,7 +127,7 @@ class UnfurlsStore extends Store<Unfurl<any>> {
         type: data.type,
         fetchedAt: new Date().toISOString(),
         data,
-      } as Unfurl<UnfurlType>);
+      });
     } catch (err) {
       Logger.warn("Failed to unfurl url", {
         url,

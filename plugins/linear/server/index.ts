@@ -30,6 +30,7 @@ if (enabled) {
     {
       type: Hook.UnfurlProvider,
       name: "Linear",
+      // Cached per user, as results contain text localized for the user.
       value: { unfurl: Linear.unfurl, cacheExpiry: Minute.seconds },
     },
     {
