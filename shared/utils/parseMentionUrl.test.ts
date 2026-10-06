@@ -77,6 +77,31 @@ describe("parseMentionUrl", () => {
     });
   });
 
+  it("should parse the url of an external mention", () => {
+    const href = "https://gitlab.example.com/g/p/-/issues/1?a=1&b=2";
+    expect(
+      parseMentionUrl(
+        `mention://9a17c1c8-d178-4350-9001-203a73070fcb/issue/abc123?href=${encodeURIComponent(href)}`
+      )
+    ).toEqual({
+      id: "9a17c1c8-d178-4350-9001-203a73070fcb",
+      mentionType: "issue",
+      modelId: "abc123",
+      href,
+    });
+
+    expect(
+      parseMentionUrl(`mention://issue/abc123?href=${encodeURIComponent(href)}`)
+    ).toEqual({ mentionType: "issue", modelId: "abc123", href });
+  });
+
+  it("should ignore a malformed url parameter", () => {
+    expect(parseMentionUrl("mention://issue/abc123?href=%E0%A4%A")).toEqual({
+      mentionType: "issue",
+      modelId: "abc123",
+    });
+  });
+
   it("should return empty object for invalid URL", () => {
     expect(parseMentionUrl("https://example.com")).toEqual({});
   });

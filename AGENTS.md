@@ -13,6 +13,8 @@ There is a web client which is fully responsive and works on mobile devices.
 
 Refer to /docs/ARCHITECTURE.md for detailed architecture documentation.
 
+This repository is a fork of outline/outline with changes for self-hosted use. Procedures that only apply to this fork, such as migration steps for existing instances, fork-specific environment variables, and notes for merging upstream, are documented in /docs/FORK.md. Add any new fork-specific procedure to that file instead of creating a new document.
+
 ## Instructions
 
 You're an expert in the following areas:

@@ -52,6 +52,7 @@ import type {
   NavigationNode,
 } from "@shared/types";
 import { CollectionPermission, NavigationNodeType } from "@shared/types";
+import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import { UrlHelper } from "@shared/utils/UrlHelper";
 import { sortNavigationNodes } from "@shared/utils/collections";
 import slugify from "@shared/utils/slugify";
@@ -375,17 +376,31 @@ class Collection extends ParanoidModel<
   static async onBeforeSave(model: Collection) {
     const descriptionChanged = model.changed("description");
     const contentChanged = model.changed("content");
+    let deriveDescription = contentChanged && !descriptionChanged;
 
     if (descriptionChanged && !contentChanged) {
       model.content = model.description
         ? (parser.parse(model.description)?.toJSON() ?? null)
         : null;
-    } else if (contentChanged && !descriptionChanged) {
+    } else if (!deriveDescription && !model.content) {
+      model.content = await DocumentHelper.toJSON(model);
+    }
+
+    // Unfurled data depends on the access of whoever fetched it, see Document.
+    if (model.content && model.changed("content")) {
+      const content = ProsemirrorDataHelper.removeUnfurledMentionData(
+        model.content
+      );
+      if (content !== model.content) {
+        model.content = content;
+        deriveDescription = true;
+      }
+    }
+
+    if (deriveDescription) {
       model.description = model.content
         ? await DocumentHelper.toMarkdown(model, { includeTitle: false })
         : null;
-    } else if (!model.content) {
-      model.content = await DocumentHelper.toJSON(model);
     }
 
     if (model.changed("documentStructure")) {

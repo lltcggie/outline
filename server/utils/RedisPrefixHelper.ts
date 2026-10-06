@@ -3,13 +3,41 @@
  */
 export class RedisPrefixHelper {
   /**
-   * Gets key against which unfurl response for the given url is stored.
+   * Gets key against which unfurl response for the given url is stored. A
+   * response that depends on the access of the user that requested it is
+   * never shared between users.
    *
    * @param teamId The team ID to generate a key for.
+   * @param userId The ID of the user the response was fetched for, or
+   * undefined for a response that is shared within the team.
    * @param url The url to generate a key for.
+   * @returns the cache key string.
    */
-  public static getUnfurlKey(teamId: string, url = "") {
-    return `unfurl:${teamId}:${url}`;
+  public static getUnfurlKey(
+    teamId: string,
+    userId: string | undefined,
+    url: string
+  ) {
+    return userId
+      ? `${this.getUnfurlPrefix(teamId, userId)}${url}`
+      : `${this.getUnfurlPrefix(teamId)}shared:${url}`;
+  }
+
+  /**
+   * Gets the prefix shared by cached unfurl responses, used to clear them.
+   *
+   * @param teamId The team ID to scope the prefix to, all teams when omitted.
+   * @param userId The user ID to scope the prefix to, all users when omitted.
+   * @returns the cache key prefix.
+   */
+  public static getUnfurlPrefix(teamId?: string, userId?: string) {
+    if (!teamId) {
+      return "unfurl:";
+    }
+    if (!userId) {
+      return `unfurl:${teamId}:`;
+    }
+    return `unfurl:${teamId}:${userId}:`;
   }
 
   /**

@@ -8,6 +8,8 @@ import {
   buildCollection,
   buildTeam,
   buildDocument,
+  buildTemplate,
+  buildUnfurledMentionContent,
 } from "@server/test/factories";
 import { withAPIContext } from "@server/test/support";
 import Collection from "./Collection";
@@ -703,5 +705,32 @@ describe("#archiveWithCtx", () => {
 
     await otherDocument.reload();
     expect(otherDocument.archivedAt).toBeNull();
+  });
+});
+
+const unfurledHref = "https://gitlab.example.com/secret/p/-/issues/1";
+
+describe("#removeUnfurledMentionData", () => {
+  it("should not store unfurled data in content or description", async () => {
+    const collection = await buildCollection();
+    collection.content = buildUnfurledMentionContent({ href: unfurledHref });
+    await collection.save();
+    await collection.reload();
+
+    expect(JSON.stringify(collection.content)).not.toContain("unfurl");
+    expect(collection.description).not.toContain("Secret issue title");
+    expect(collection.description).toContain(unfurledHref);
+  });
+
+  it("should not store unfurled data in templates", async () => {
+    const template = await buildTemplate({
+      content: buildUnfurledMentionContent(),
+    });
+    await template.reload();
+
+    expect(JSON.stringify(template.content)).not.toContain("unfurl");
+    expect(JSON.stringify(template.content)).not.toContain(
+      "Secret issue title"
+    );
   });
 });

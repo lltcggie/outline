@@ -2,26 +2,64 @@ import { RedisPrefixHelper } from "./RedisPrefixHelper";
 
 describe("RedisPrefixHelper", () => {
   describe("getUnfurlKey", () => {
-    it("should generate key with teamId and url", () => {
-      const teamId = "team-123";
-      const url = "https://example.com";
-      const result = RedisPrefixHelper.getUnfurlKey(teamId, url);
-      expect(result).toBe("unfurl:team-123:https://example.com");
+    it("should generate key with teamId, userId and url", () => {
+      const result = RedisPrefixHelper.getUnfurlKey(
+        "team-123",
+        "user-1",
+        "https://example.com"
+      );
+      expect(result).toBe("unfurl:team-123:user-1:https://example.com");
     });
 
-    it("should generate key with teamId and empty url", () => {
-      const teamId = "team-456";
-      const result = RedisPrefixHelper.getUnfurlKey(teamId);
-      expect(result).toBe("unfurl:team-456:");
+    it("should generate different keys for different users", () => {
+      const url = "https://example.com";
+      expect(
+        RedisPrefixHelper.getUnfurlKey("team-123", "user-1", url)
+      ).not.toBe(RedisPrefixHelper.getUnfurlKey("team-123", "user-2", url));
+    });
+
+    it("should generate a shared key without a user", () => {
+      const url = "https://example.com";
+      expect(RedisPrefixHelper.getUnfurlKey("team-123", undefined, url)).toBe(
+        "unfurl:team-123:shared:https://example.com"
+      );
+      expect(
+        RedisPrefixHelper.getUnfurlKey("team-123", undefined, url)
+      ).not.toMatch(
+        new RegExp(
+          `^${RedisPrefixHelper.getUnfurlPrefix("team-123", "user-1")}`
+        )
+      );
     });
 
     it("should handle special characters in url", () => {
-      const teamId = "team-789";
       const url = "https://example.com/path?query=value&other=123";
-      const result = RedisPrefixHelper.getUnfurlKey(teamId, url);
+      const result = RedisPrefixHelper.getUnfurlKey("team-789", "user-1", url);
       expect(result).toBe(
-        "unfurl:team-789:https://example.com/path?query=value&other=123"
+        "unfurl:team-789:user-1:https://example.com/path?query=value&other=123"
       );
+    });
+  });
+
+  describe("getUnfurlPrefix", () => {
+    it("should scope the prefix to a user", () => {
+      const prefix = RedisPrefixHelper.getUnfurlPrefix("team-123", "user-1");
+      expect(
+        RedisPrefixHelper.getUnfurlKey("team-123", "user-1", "https://a.com")
+      ).toMatch(new RegExp(`^${prefix}`));
+      expect(
+        RedisPrefixHelper.getUnfurlKey("team-123", "user-2", "https://a.com")
+      ).not.toMatch(new RegExp(`^${prefix}`));
+    });
+
+    it("should scope the prefix to a team", () => {
+      expect(RedisPrefixHelper.getUnfurlPrefix("team-456")).toBe(
+        "unfurl:team-456:"
+      );
+    });
+
+    it("should match all teams when no team is given", () => {
+      expect(RedisPrefixHelper.getUnfurlPrefix()).toBe("unfurl:");
     });
   });
 

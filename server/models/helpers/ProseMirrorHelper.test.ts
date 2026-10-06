@@ -6,6 +6,7 @@ import { prosemirrorToYDoc, yDocToProsemirrorJSON } from "y-prosemirror";
 import * as Y from "yjs";
 import type { ProsemirrorData } from "@shared/types";
 import { MentionType } from "@shared/types";
+import { UnavailableMentionLabel } from "@shared/utils/ProsemirrorDataHelper";
 import { ProsemirrorHelper as SharedProsemirrorHelper } from "@shared/utils/ProsemirrorHelper";
 import { createContext } from "@server/context";
 import { parser, schema, serializer } from "@server/editor";
@@ -1114,9 +1115,10 @@ describe("ProsemirrorHelper", () => {
       expect(mention.type.name).toBe("mention");
       expect(mention.attrs.type).toBe(MentionType.Issue);
       // Markdown that leaves Outline carries the url, so it comes back in as a
-      // mention rather than a plain link.
+      // mention rather than a plain link. The title is never serialized, as it
+      // depends on the access of whoever unfurled the mention.
       expect(serializer.serialize(doc, { commonMark: true }).trim()).toBe(
-        "@[Fix parser](https://github.com/acme/infra/issues/2)"
+        "@[https://github.com/acme/infra/issues/2](https://github.com/acme/infra/issues/2)"
       );
     });
   });
@@ -2530,6 +2532,169 @@ describe("ProsemirrorHelper", () => {
           userId: "user-1",
         })
       ).toThrow(/cannot be commented/);
+    });
+  });
+
+  describe("removeUnfurledMentionDataFromYDoc", () => {
+    const href = "https://gitlab.example.com/secret/p/-/issues/1";
+    const content = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "mention",
+              attrs: {
+                id: "0c440212-8b40-49fa-8a64-2548d6b60d59",
+                modelId: "c85a0d80-3a89-4b25-a0cd-e7fc83f0d226",
+                type: MentionType.Issue,
+                label: "Secret issue title",
+                href,
+                unfurl: { title: "Secret issue title" },
+              },
+            },
+            {
+              type: "mention",
+              attrs: {
+                id: "1c440212-8b40-49fa-8a64-2548d6b60d59",
+                modelId: "d85a0d80-3a89-4b25-a0cd-e7fc83f0d226",
+                type: MentionType.User,
+                label: "Jane",
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    it("removes unfurled data in place", () => {
+      const ydoc = ProsemirrorHelper.toYDoc(content);
+
+      expect(ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(ydoc)).toBe(
+        true
+      );
+
+      const json = yDocToProsemirrorJSON(ydoc, "default");
+      const [issue, user] = json.content[0].content;
+      expect(issue.attrs.unfurl).toBeUndefined();
+      expect(issue.attrs.label).toBe(href);
+      expect(user.attrs.label).toBe("Jane");
+      expect(ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(ydoc)).toBe(
+        false
+      );
+    });
+
+    it("restores a lost url and replaces a label that may be a title", () => {
+      const ydoc = ProsemirrorHelper.toYDoc({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "mention",
+                attrs: {
+                  id: "2c440212-8b40-49fa-8a64-2548d6b60d59",
+                  modelId: "e85a0d80-3a89-4b25-a0cd-e7fc83f0d226",
+                  type: MentionType.Issue,
+                  label: href,
+                },
+              },
+              {
+                type: "mention",
+                attrs: {
+                  id: "3c440212-8b40-49fa-8a64-2548d6b60d59",
+                  modelId: "f85a0d80-3a89-4b25-a0cd-e7fc83f0d226",
+                  type: MentionType.Issue,
+                  label: "Secret issue title",
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      expect(ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(ydoc)).toBe(
+        true
+      );
+
+      const json = yDocToProsemirrorJSON(ydoc, "default");
+      const [restored, replaced] = json.content[0].content;
+      expect(restored.attrs.href).toBe(href);
+      expect(restored.attrs.label).toBe(href);
+      expect(replaced.attrs.label).toBe(UnavailableMentionLabel);
+      expect(ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(ydoc)).toBe(
+        false
+      );
+    });
+
+    it("syncs the change to other copies of the document", () => {
+      const ydoc = ProsemirrorHelper.toYDoc(content);
+      const other = new Y.Doc();
+      Y.applyUpdate(other, Y.encodeStateAsUpdate(ydoc));
+      ydoc.on("update", (update: Uint8Array) => Y.applyUpdate(other, update));
+
+      ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(ydoc);
+
+      const json = yDocToProsemirrorJSON(other, "default");
+      expect(json.content[0].content[0].attrs.label).toBe(href);
+    });
+
+    it("cleans encoded state", () => {
+      const state = ProsemirrorHelper.toState(
+        ProsemirrorHelper.toYDoc(content)
+      );
+      const cleaned =
+        ProsemirrorHelper.removeUnfurledMentionDataFromState(state);
+
+      expect(cleaned).toBeDefined();
+      expect(Buffer.from(cleaned!).toString()).not.toContain(
+        "Secret issue title"
+      );
+      expect(
+        ProsemirrorHelper.removeUnfurledMentionDataFromState(cleaned!)
+      ).toBeUndefined();
+    });
+
+    it("does not decode a state without mentions", () => {
+      expect(
+        ProsemirrorHelper.removeUnfurledMentionDataFromState(
+          ProsemirrorHelper.toState(ProsemirrorHelper.toYDoc("Some text"))
+        )
+      ).toBeUndefined();
+
+      // Decoding these bytes would throw, so the state is skipped unread.
+      expect(
+        ProsemirrorHelper.removeUnfurledMentionDataFromState(
+          new Uint8Array([255, 255, 255])
+        )
+      ).toBeUndefined();
+    });
+
+    it("merges with a client that cached the state before it was cleaned", () => {
+      const state = ProsemirrorHelper.toState(
+        ProsemirrorHelper.toYDoc(content)
+      );
+      const cleaned =
+        ProsemirrorHelper.removeUnfurledMentionDataFromState(state)!;
+
+      // A client's IndexedDB cache holds the old state and syncs it back.
+      const client = new Y.Doc();
+      Y.applyUpdate(client, state);
+      Y.applyUpdate(client, cleaned);
+      const server = new Y.Doc();
+      Y.applyUpdate(server, cleaned);
+      Y.applyUpdate(server, Y.encodeStateAsUpdate(client));
+
+      for (const ydoc of [client, server]) {
+        const json = yDocToProsemirrorJSON(ydoc, "default");
+        expect(json.content).toHaveLength(1);
+        const mentions = json.content[0].content;
+        expect(mentions).toHaveLength(2);
+        expect(mentions[0].attrs.unfurl).toBeUndefined();
+        expect(mentions[0].attrs.label).toBe(href);
+      }
     });
   });
 });

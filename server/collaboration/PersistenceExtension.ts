@@ -28,6 +28,12 @@ export default class PersistenceExtension implements Extension {
   /** The number of consecutive persistence failures, keyed by document name. */
   private persistFailureCounts = new Map<string, number>();
 
+  /**
+   * The origin of the server's own removal of unfurled mention data, which is
+   * neither an edit to attribute nor a change that needs to be stored.
+   */
+  private static readonly cleanupOrigin = Symbol("removeUnfurledMentionData");
+
   /** Attribution captured synchronously with each document update. */
   private lastEditors = new WeakMap<Y.Doc, Promise<CollaborativeEdit>>();
 
@@ -55,10 +61,11 @@ export default class PersistenceExtension implements Extension {
 
     // If the document already has state, we can return it without needing a transaction
     if (documentWithoutLock.state) {
-      const ydoc = new Y.Doc();
-      Logger.info("database", `Document ${documentId} is in database state`);
-      Y.applyUpdate(ydoc, documentWithoutLock.state);
-      return ydoc;
+      return this.loadFromState(
+        documentId,
+        documentWithoutLock.state,
+        fieldName
+      );
     }
 
     // If the document doesn't have state yet, we need to acquire a lock and create it
@@ -76,10 +83,7 @@ export default class PersistenceExtension implements Extension {
 
       // Double-check the state in case another process created it
       if (document.state) {
-        ydoc = new Y.Doc();
-        Logger.info("database", `Document ${documentId} is in database state`);
-        Y.applyUpdate(ydoc, document.state);
-        return ydoc;
+        return this.loadFromState(documentId, document.state, fieldName);
       }
 
       if (document.content) {
@@ -95,6 +99,9 @@ export default class PersistenceExtension implements Extension {
         );
         ydoc = ProsemirrorHelper.toYDoc(document.text, fieldName);
       }
+      // Hooks are bypassed below, and both the content and the markdown text of
+      // older documents may still carry unfurled data.
+      ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(ydoc, fieldName);
       const state = ProsemirrorHelper.toState(ydoc);
       await document.update(
         {
@@ -124,36 +131,46 @@ export default class PersistenceExtension implements Extension {
     // runs behind other extensions in an async chain and so may not have
     // recorded the change by the time the document is stored on disconnect.
     const [, documentId] = documentName.split(".");
-    document.on("update", (_update: Uint8Array, origin?: Connection) => {
-      this.unsavedDocumentNames.add(documentName);
-      const context:
-        | withContext<afterLoadDocumentPayload>["context"]
-        | undefined = origin?.context;
-      const userId = context?.user?.id;
-      const key = Document.getCollaboratorKey(documentId);
-      const editor = userId
-        ? Redis.defaultClient
-            .zaddWithSequence(key, userId, Day.seconds)
-            .then((sequence) => ({ userId, sequence }))
-        : Redis.defaultClient.zlatestWithSequence(key).then((latest) => ({
-            userId: latest?.member,
-            sequence: latest?.sequence,
-          }));
+    document.on(
+      "update",
+      (
+        _update: Uint8Array,
+        origin?: Connection | typeof PersistenceExtension.cleanupOrigin
+      ) => {
+        if (origin === PersistenceExtension.cleanupOrigin) {
+          return;
+        }
 
-      // Updates from Redis have no connection origin. Resolve their editor
-      // when received, rather than reading a potentially newer editor at save
-      // time or retaining the previous local editor.
-      this.lastEditors.set(
-        document,
-        editor.catch((err) => {
-          Logger.warn("Unable to track document editor", {
-            documentId,
-            message: toError(err).message,
-          });
-          return { userId };
-        })
-      );
-    });
+        this.unsavedDocumentNames.add(documentName);
+        const context:
+          | withContext<afterLoadDocumentPayload>["context"]
+          | undefined = origin?.context;
+        const userId = context?.user?.id;
+        const key = Document.getCollaboratorKey(documentId);
+        const editor = userId
+          ? Redis.defaultClient
+              .zaddWithSequence(key, userId, Day.seconds)
+              .then((sequence) => ({ userId, sequence }))
+          : Redis.defaultClient.zlatestWithSequence(key).then((latest) => ({
+              userId: latest?.member,
+              sequence: latest?.sequence,
+            }));
+
+        // Updates from Redis have no connection origin. Resolve their editor
+        // when received, rather than reading a potentially newer editor at save
+        // time or retaining the previous local editor.
+        this.lastEditors.set(
+          document,
+          editor.catch((err) => {
+            Logger.warn("Unable to track document editor", {
+              documentId,
+              message: toError(err).message,
+            });
+            return { userId };
+          })
+        );
+      }
+    );
   }
 
   /**
@@ -179,6 +196,16 @@ export default class PersistenceExtension implements Extension {
       Logger.debug("multiplayer", `No changes for ${documentName}`);
       return;
     }
+
+    // Unfurled data written by outdated clients or other paths is removed from
+    // the live document, so that the change is also synced to every connected
+    // client. The update listener ignores this origin, so the change neither
+    // replaces the editor of the pending edits nor schedules another store.
+    ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(
+      document,
+      "default",
+      PersistenceExtension.cleanupOrigin
+    );
 
     // Capture both the content and local author before yielding. New edits
     // received during Redis or database I/O belong to a subsequent save.
@@ -253,6 +280,27 @@ export default class PersistenceExtension implements Extension {
     } finally {
       snapshot.destroy();
     }
+  }
+
+  /**
+   * Creates a collaborative document from its stored state.
+   *
+   * @param documentId the id of the document.
+   * @param state the stored state of the document.
+   * @param fieldName the name of the fragment holding the document.
+   * @returns the collaborative document.
+   */
+  private loadFromState(
+    documentId: string,
+    state: Uint8Array,
+    fieldName: string
+  ) {
+    const ydoc = new Y.Doc();
+    Logger.info("database", `Document ${documentId} is in database state`);
+    Y.applyUpdate(ydoc, state);
+    // Previously stored unfurled data is never served to clients.
+    ProsemirrorHelper.removeUnfurledMentionDataFromYDoc(ydoc, fieldName);
+    return ydoc;
   }
 }
 

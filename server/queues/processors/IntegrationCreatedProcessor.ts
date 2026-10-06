@@ -16,7 +16,23 @@ export default class IntegrationCreatedProcessor extends BaseProcessor {
       },
       paranoid: false,
     });
-    if (integration?.type !== IntegrationType.Embed) {
+    if (!integration) {
+      return;
+    }
+
+    // A newly linked account changes what the user can see, so their cached
+    // unfurls, including failures, are stale now.
+    if (integration.type === IntegrationType.LinkedAccount) {
+      await CacheHelper.clearData(
+        RedisPrefixHelper.getUnfurlPrefix(
+          integration.teamId,
+          integration.userId
+        )
+      );
+      return;
+    }
+
+    if (integration.type !== IntegrationType.Embed) {
       return;
     }
 
@@ -27,7 +43,7 @@ export default class IntegrationCreatedProcessor extends BaseProcessor {
 
     // Clear the cache of unfurled data for the team as it may be stale now.
     await CacheHelper.clearData(
-      RedisPrefixHelper.getUnfurlKey(integration.teamId)
+      RedisPrefixHelper.getUnfurlPrefix(integration.teamId)
     );
   }
 }

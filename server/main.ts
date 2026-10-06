@@ -40,7 +40,7 @@ export async function start(id: number, disconnect: () => void) {
 
   // Clear unfurl cache in development so code changes take effect immediately
   if (env.isDevelopment) {
-    void CacheHelper.clearData(RedisPrefixHelper.getUnfurlKey(""));
+    void CacheHelper.clearData(RedisPrefixHelper.getUnfurlPrefix());
   }
 
   // Find if SSL certs are available

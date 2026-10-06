@@ -12,12 +12,14 @@ import {
   buildResolvedComment,
   buildGroup,
   buildTeam,
+  buildUnfurledMentionContent,
   buildUser,
   buildGuestUser,
 } from "@server/test/factories";
 import { withAPIContext } from "@server/test/support";
 import { sequelize } from "@server/storage/database";
 import GroupMembership from "./GroupMembership";
+import { ProsemirrorHelper } from "./helpers/ProsemirrorHelper";
 import GroupUser from "./GroupUser";
 import UserMembership from "./UserMembership";
 
@@ -981,5 +983,56 @@ describe("commentCount", () => {
     await thread.save();
 
     expect(await document.commentCount).toEqual(1);
+  });
+});
+
+const unfurledHref = "https://gitlab.example.com/secret/p/-/issues/1";
+
+describe("#removeUnfurledMentionData", () => {
+  it("should not store unfurled data in content or state", async () => {
+    const content = buildUnfurledMentionContent({ href: unfurledHref });
+    const document = await buildDocument({ content });
+    document.state = ProsemirrorHelper.toState(
+      ProsemirrorHelper.toYDoc(content)
+    );
+    await document.save();
+
+    const reloaded = await Document.unscoped().findByPk(document.id, {
+      attributes: ["id", "content", "state"],
+      rejectOnEmpty: true,
+    });
+    const stored = JSON.stringify(reloaded.content);
+    expect(stored).not.toContain("unfurl");
+    expect(stored).not.toContain("Secret issue title");
+    expect(Buffer.from(reloaded.state!).toString()).not.toContain(
+      "Secret issue title"
+    );
+  });
+
+  it("should not store unfurled data in content backfilled from text", async () => {
+    const { id } = await buildDocument();
+    // A legacy document that only has markdown text.
+    await Document.unscoped().update(
+      {
+        content: null,
+        state: null,
+        text: `@[Secret issue title](${unfurledHref})`,
+      },
+      { where: { id }, hooks: false }
+    );
+
+    const document = await Document.unscoped().findByPk(id, {
+      rejectOnEmpty: true,
+    });
+    document.title = "Updated";
+    await document.save();
+
+    const reloaded = await Document.unscoped().findByPk(id, {
+      attributes: ["id", "content"],
+      rejectOnEmpty: true,
+    });
+    const content = JSON.stringify(reloaded.content);
+    expect(content).toContain(unfurledHref);
+    expect(content).not.toContain("Secret issue title");
   });
 });

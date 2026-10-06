@@ -502,3 +502,32 @@ describe("GitLabUtils.parseUrl", () => {
     });
   });
 });
+
+describe("GitLabUtils.isSameInstance", () => {
+  it("should treat gitlab.com as the default instance", () => {
+    expect(GitLabUtils.isSameInstance(undefined, "https://gitlab.com/")).toBe(
+      true
+    );
+  });
+
+  it("should ignore the case of the host, default ports and trailing slashes", () => {
+    expect(
+      GitLabUtils.isSameInstance(
+        "https://GitLab.Example.com:443/",
+        "https://gitlab.example.com"
+      )
+    ).toBe(true);
+  });
+
+  it("should identify an instance by its host alone, as parseUrl does", () => {
+    expect(
+      GitLabUtils.isSameInstance(
+        "https://example.com/gitlab/",
+        "https://example.com"
+      )
+    ).toBe(true);
+    expect(GitLabUtils.normalizeInstanceUrl("https://Example.com/gitlab")).toBe(
+      "https://example.com"
+    );
+  });
+});

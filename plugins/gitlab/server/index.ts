@@ -5,7 +5,9 @@ import { GitLabUtils } from "../shared/GitLabUtils";
 import { GitLabIssueProvider } from "./GitLabIssueProvider";
 import router from "./api/gitlab";
 import { GitLab } from "./gitlab";
+import env from "./env";
 import GitLabWebhookTask from "./tasks/GitLabWebhookTask";
+import { uninstall } from "./uninstall";
 
 PluginManager.add([
   {
@@ -22,13 +24,19 @@ PluginManager.add([
     value: { unfurl: GitLab.unfurl, cacheExpiry: Minute.seconds },
   },
   {
-    // Only the public host is recognized here, a self-hosted instance is not
-    // known without the settings of a connected integration.
+    // Mentions are never narrowed once displayed, so the type is decided here.
+    // A self-managed instance is only known synchronously through GITLAB_URL.
     type: Hook.MentionProvider,
-    value: (url: URL) => GitLabUtils.mentionType(url),
+    value: (url: URL) =>
+      GitLabUtils.mentionType(url) ??
+      GitLabUtils.mentionType(url, env.GITLAB_URL),
   },
   {
     type: Hook.Task,
     value: GitLabWebhookTask,
+  },
+  {
+    type: Hook.Uninstall,
+    value: uninstall,
   },
 ]);

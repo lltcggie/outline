@@ -12,6 +12,8 @@ PluginManager.add([
       icon: Icon,
       description:
         "Connect your GitLab account to Outline to enable rich, realtime, issue and merge request previews inside documents.",
+      // Every member links their own account, previews use their own access.
+      enabled: () => true,
       component: createLazyComponent(() => import("./Settings")),
     },
   },

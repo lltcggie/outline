@@ -11,6 +11,7 @@ import {
   DataType,
   BelongsTo,
   BeforeCreate,
+  BeforeSave,
   ForeignKey,
   Column,
   Table,
@@ -21,6 +22,7 @@ import {
 } from "sequelize-typescript";
 import type { ProsemirrorData, ReactionSummary } from "@shared/types";
 import { CommentStatusFilter } from "@shared/types";
+import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import { ProsemirrorHelper } from "@shared/utils/ProsemirrorHelper";
 import { CommentValidation } from "@shared/validations";
 import { commentSchema, serializer } from "@server/editor";
@@ -271,6 +273,15 @@ class Comment extends ParanoidModel<
   }
 
   // hooks
+
+  @BeforeSave
+  static removeUnfurledMentionData(model: Comment) {
+    // Unfurled data depends on the access of whoever fetched it, see Document.
+    // The same reference is returned when nothing changed.
+    if (model.changed("data")) {
+      model.data = ProsemirrorDataHelper.removeUnfurledMentionData(model.data);
+    }
+  }
 
   // A reply created on an already-resolved thread inherits the parent's
   // resolved state so the resolvedAt column alone can answer "is this thread

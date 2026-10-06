@@ -28,7 +28,15 @@ export default class IntegrationDeletedProcessor extends BaseProcessor {
     // Clear the cache of unfurled data for the team as it may be stale now.
     if (integration.type === IntegrationType.Embed) {
       await CacheHelper.clearData(
-        RedisPrefixHelper.getUnfurlKey(integration.teamId)
+        RedisPrefixHelper.getUnfurlPrefix(integration.teamId)
+      );
+    } else if (integration.type === IntegrationType.LinkedAccount) {
+      // The user's unfurls were fetched with the removed account.
+      await CacheHelper.clearData(
+        RedisPrefixHelper.getUnfurlPrefix(
+          integration.teamId,
+          integration.userId
+        )
       );
     }
 

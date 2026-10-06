@@ -45,6 +45,9 @@ export default async function documentCollaborativeUpdater({
   isLastConnection,
   clientVersion,
 }: Props) {
+  // Hooks are bypassed below. Unfurled data that must never be stored is
+  // removed from the live document by the caller before it is snapshotted, see
+  // PersistenceExtension.onStoreDocument, so the change also reaches clients.
   const state = Y.encodeStateAsUpdate(ydoc);
 
   // Round-trip through the schema so the stored JSON is canonical. The raw

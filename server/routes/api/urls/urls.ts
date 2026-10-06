@@ -35,6 +35,50 @@ import { Day } from "@shared/utils/time";
 
 const router = new Router();
 const plugins = PluginManager.getHooks(Hook.UnfurlProvider);
+const userPlugins = plugins.filter(
+  (plugin) => plugin.value.cacheScope !== "team"
+);
+const teamPlugins = plugins.filter(
+  (plugin) => plugin.value.cacheScope === "team"
+);
+
+/**
+ * Unfurls a url with the first of the given providers that recognizes it.
+ *
+ * @param providers the providers to try, in order.
+ * @param url the url to unfurl.
+ * @param actor the user unfurling the url.
+ * @returns the result to cache, or undefined if no provider recognized it.
+ */
+async function unfurlWith(
+  providers: typeof plugins,
+  url: string,
+  actor: User
+): Promise<CacheResult<Unfurl | { error: true }> | undefined> {
+  const hostname = new URL(url).hostname;
+
+  for (const plugin of providers) {
+    const pluginName = plugin.name ?? "unknown";
+    const unfurl = await traceFunction({
+      spanName: "unfurl.plugin",
+      resourceName: pluginName,
+      tags: {
+        "unfurl.plugin": pluginName,
+        "unfurl.url_host": hostname,
+      },
+    })(() => plugin.value.unfurl(url, actor))();
+    if (unfurl) {
+      if ("error" in unfurl) {
+        return { data: { error: true as const }, expiry: 60 };
+      }
+      return {
+        data: unfurl as Unfurl,
+        expiry: plugin.value.cacheExpiry,
+      };
+    }
+  }
+  return undefined;
+}
 
 router.post(
   "urls.unfurl",
@@ -193,39 +237,34 @@ router.post(
 
     // External resources
     // Use getDataOrSet which handles distributed locking to prevent thundering herd
-    // when multiple clients request the same URL simultaneously
-    const cacheKey = RedisPrefixHelper.getUnfurlKey(actor.teamId, url);
+    // when multiple clients request the same URL simultaneously.
     const defaultCacheExpiry = 3600;
 
-    const unfurlResult = await CacheHelper.getDataOrSet<
-      Unfurl | { error: true }
+    // Providers that fetch with the user's own access are cached per user. When
+    // none of them recognizes the url this is remembered, so that the shared
+    // result is used without asking them again.
+    const userResult = await CacheHelper.getDataOrSet<
+      Unfurl | { error: true } | { unhandled: true }
     >(
-      cacheKey,
-      async (): Promise<CacheResult<Unfurl | { error: true }> | undefined> => {
-        for (const plugin of plugins) {
-          const pluginName = plugin.name ?? "unknown";
-          const unfurl = await traceFunction({
-            spanName: "unfurl.plugin",
-            resourceName: pluginName,
-            tags: {
-              "unfurl.plugin": pluginName,
-              "unfurl.url_host": urlObj.hostname,
-            },
-          })(() => plugin.value.unfurl(url, actor))();
-          if (unfurl) {
-            if ("error" in unfurl) {
-              return { data: { error: true as const }, expiry: 60 };
-            }
-            return {
-              data: unfurl as Unfurl,
-              expiry: plugin.value.cacheExpiry,
-            };
-          }
-        }
-        return undefined;
-      },
+      RedisPrefixHelper.getUnfurlKey(actor.teamId, actor.id, url),
+      async () =>
+        (await unfurlWith(userPlugins, url, actor)) ?? {
+          data: { unhandled: true as const },
+          expiry: defaultCacheExpiry,
+        },
       defaultCacheExpiry
     );
+
+    // Other providers return the same result to everyone, so it is shared
+    // within the team.
+    const unfurlResult =
+      userResult && "unhandled" in userResult
+        ? await CacheHelper.getDataOrSet<Unfurl | { error: true }>(
+            RedisPrefixHelper.getUnfurlKey(actor.teamId, undefined, url),
+            () => unfurlWith(teamPlugins, url, actor),
+            defaultCacheExpiry
+          )
+        : userResult;
 
     if (!unfurlResult || "error" in unfurlResult) {
       ctx.response.status = 204;

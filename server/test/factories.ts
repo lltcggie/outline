@@ -981,6 +981,41 @@ export function buildMention(overrides: {
   };
 }
 
+/**
+ * Builds document content with an issue mention that carries data unfurled
+ * from an external service, which must never be stored.
+ *
+ * @param overrides.href the url of the issue.
+ * @param overrides.title the title unfurled with another user's access.
+ * @returns the content as JSON.
+ */
+export function buildUnfurledMentionContent({
+  href = "https://gitlab.example.com/secret/p/-/issues/1",
+  title = "Secret issue title",
+}: { href?: string; title?: string } = {}): ProsemirrorData {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          {
+            type: "mention",
+            attrs: {
+              id: randomUUID(),
+              modelId: randomUUID(),
+              type: MentionType.Issue,
+              label: title,
+              href,
+              unfurl: { title, description: "Body" },
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
 export function buildCommentMark(overrides: {
   id?: string;
   userId?: string;

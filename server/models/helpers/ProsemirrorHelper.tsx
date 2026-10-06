@@ -38,6 +38,7 @@ import {
   attachmentRedirectRegex,
   ProsemirrorHelper as SharedProsemirrorHelper,
 } from "@shared/utils/ProsemirrorHelper";
+import { ProsemirrorDataHelper as SharedProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 
 import parseDocumentSlug from "@shared/utils/parseDocumentSlug";
 import { isRTL } from "@shared/utils/rtl";
@@ -171,6 +172,97 @@ export class ProsemirrorHelper extends SharedProsemirrorHelper {
    */
   static toState(ydoc: Y.Doc) {
     return Buffer.from(Y.encodeStateAsUpdate(ydoc));
+  }
+
+  /**
+   * Removes data that was unfurled from an external service from all mentions
+   * in a collaborative document, see
+   * `ProsemirrorDataHelper.removeUnfurledMentionData`. The change is made in
+   * place so that it is synced to connected clients like any other edit.
+   *
+   * @param ydoc the collaborative document to clean.
+   * @param fieldName the name of the fragment holding the document.
+   * @param origin the origin of the transaction that makes the change, which
+   * lets update listeners tell it apart from edits.
+   * @returns true if the document was changed.
+   */
+  static removeUnfurledMentionDataFromYDoc(
+    ydoc: Y.Doc,
+    fieldName = "default",
+    origin?: symbol
+  ): boolean {
+    const fragment = ydoc.getXmlFragment(fieldName);
+    const changes: {
+      mention: Y.XmlElement;
+      attrs: Record<string, unknown>;
+      cleaned: Record<string, unknown>;
+    }[] = [];
+
+    for (const mention of fragment.createTreeWalker(
+      (item) => item instanceof Y.XmlElement && item.nodeName === "mention"
+    )) {
+      if (!(mention instanceof Y.XmlElement)) {
+        continue;
+      }
+      const attrs: Record<string, unknown> = mention.getAttributes();
+      const cleaned = SharedProsemirrorDataHelper.getCleanedMentionAttrs(attrs);
+      if (cleaned) {
+        changes.push({ mention, attrs, cleaned });
+      }
+    }
+
+    if (changes.length === 0) {
+      return false;
+    }
+
+    ydoc.transact(() => {
+      for (const { mention, attrs, cleaned } of changes) {
+        // Only the attributes that differ are written, so that concurrent
+        // edits to other attributes are kept.
+        if (attrs.unfurl !== undefined) {
+          mention.removeAttribute("unfurl");
+        }
+        for (const key of ["href", "label"]) {
+          const value = cleaned[key];
+          if (typeof value === "string" && value !== attrs[key]) {
+            mention.setAttribute(key, value);
+          }
+        }
+      }
+    }, origin);
+
+    return true;
+  }
+
+  /**
+   * Removes unfurled mention data from an encoded collaborative state.
+   *
+   * @param state the encoded state to clean.
+   * @returns the cleaned state, or undefined if there was nothing to remove.
+   */
+  static removeUnfurledMentionDataFromState(
+    state: Uint8Array
+  ): Buffer | undefined {
+    // The node name of every mention element is encoded as a string, so a
+    // state without it has no mention to clean and is not decoded.
+    if (
+      !Buffer.from(state.buffer, state.byteOffset, state.byteLength).includes(
+        "mention"
+      )
+    ) {
+      return undefined;
+    }
+
+    const ydoc = new Y.Doc();
+
+    try {
+      Y.applyUpdate(ydoc, state);
+      return this.removeUnfurledMentionDataFromYDoc(ydoc)
+        ? this.toState(ydoc)
+        : undefined;
+    } finally {
+      ydoc.destroy();
+    }
   }
 
   /**
