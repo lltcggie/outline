@@ -12,6 +12,37 @@ type PerformArg = Parameters<SearchIndexProcessor["perform"]>[0];
 const processor = new SearchIndexProcessor();
 
 describe("SearchIndexProcessor", () => {
+  // The provider under test is the built-in one, whose index the database
+  // maintains. Pretend otherwise so that the processor forwards the events.
+  let indexedByDatabase: boolean;
+
+  beforeEach(() => {
+    const provider = SearchProviderManager.getProvider();
+    indexedByDatabase = provider.indexedByDatabase;
+    provider.indexedByDatabase = false;
+  });
+
+  afterEach(() => {
+    SearchProviderManager.getProvider().indexedByDatabase = indexedByDatabase;
+  });
+
+  it("should do nothing when the database maintains the index", async () => {
+    const provider = SearchProviderManager.getProvider();
+    provider.indexedByDatabase = true;
+    const removeSpy = vi.spyOn(provider, "remove");
+
+    await processor.perform({
+      name: "documents.permanent_delete",
+      documentId: "deleted-doc-id",
+      collectionId: "some-collection-id",
+      teamId: "team-id",
+      actorId: "actor-id",
+    } as PerformArg);
+
+    expect(removeSpy).not.toHaveBeenCalled();
+    removeSpy.mockRestore();
+  });
+
   it("should have the expected applicable events", () => {
     expect(SearchIndexProcessor.applicableEvents).toContain(
       "documents.publish"

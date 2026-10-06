@@ -111,8 +111,12 @@ jobs:
     if: ${{ needs.changes.outputs.server == 'true' || needs.changes.outputs.config == 'true' }}
     runs-on: ubuntu-latest
     services:
+      # PostgreSQL with the PGroonga extension, which the search-pgroonga
+      # plugin's tests need. Pinned to the version documented as tested in
+      # docs/FORK.md, so that a PGroonga release cannot change the result of an
+      # unrelated run; keep docker-compose.yml on the same tag.
       postgres:
-        image: postgres:14.2
+        image: groonga/pgroonga:4.0.9-debian-18
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password

@@ -118,7 +118,7 @@ type AdditionalFindOptions = {
 
 /** Sequelize types the query generator as unknown; this narrows to the single
  * method used to build a raw SQL filter fragment. */
-interface QueryGeneratorWithWhere {
+export interface QueryGeneratorWithWhere {
   getWhereConditions(
     where: WhereOptions<Document>,
     tableName: string,

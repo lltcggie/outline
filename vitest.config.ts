@@ -1,6 +1,10 @@
+import fs from "node:fs";
 import path from "node:path";
+import dotenv from "@dotenvx/dotenvx";
+import { Sequelize } from "sequelize";
 import swc from "unplugin-swc";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
+import { isPGroongaAvailable } from "./plugins/search-pgroonga/server/pgroongaIndex";
 
 // SSL_CERT_FILE is OpenSSL's CA bundle variable and may be present in the
 // host environment running the tests; clear it so it is not resolved into
@@ -54,68 +58,140 @@ const aliasesAsArray = Object.entries(aliases).map(([find, replacement]) => ({
 
 const fileMockAlias = { find: /\.(gif|ttf|eot|svg)$/, replacement: fileMock };
 
-export default defineConfig({
-  ...sharedConfig,
-  test: {
-    globals: true,
-    pool: "threads",
-    // Unhandled promise rejections are logged but don't fail tests on their own.
-    dangerouslyIgnoreUnhandledErrors: true,
-    projects: [
-      {
-        ...sharedConfig,
-        test: {
-          name: "server",
-          globals: true,
-          environment: "node",
-          include: ["server/**/*.test.{ts,tsx}", "plugins/**/*.test.{ts,tsx}"],
-          setupFiles: [
-            "./__mocks__/console.js",
-            "./server/test/setupMocks.ts",
-            "./server/test/setup.ts",
-          ],
-          globalSetup: ["./server/test/globalTeardown.ts"],
-          fileParallelism: true,
-        },
-      },
-      {
-        ...sharedConfig,
-        resolve: { alias: [fileMockAlias, ...aliasesAsArray] },
-        test: {
-          name: "app",
-          globals: true,
-          environment: "jsdom",
-          environmentOptions: {
-            jsdom: { url: "http://localhost" },
+const serverTestFiles = [
+  "server/**/*.test.{ts,tsx}",
+  "plugins/**/*.test.{ts,tsx}",
+];
+
+// The search-pgroonga plugin needs the PGroonga extension on the test database
+// server, so its tests run in a project of their own that exists only when the
+// extension is available. The project also runs the built-in search provider's
+// tests against the plugin, which selects its provider from SEARCH_PROVIDER.
+const pgroongaTestFiles = ["plugins/search-pgroonga/**/*.test.{ts,tsx}"];
+const searchProviderTestFiles = [
+  "plugins/search-postgres/server/PostgresSearchProvider.test.ts",
+];
+
+async function hasPGroongaOnTestDatabase(): Promise<boolean> {
+  const envTestPath = path.resolve(__dirname, ".env.test");
+  const connectionString =
+    process.env.DATABASE_URL ??
+    (fs.existsSync(envTestPath)
+      ? dotenv.parse(fs.readFileSync(envTestPath, "utf8")).DATABASE_URL
+      : undefined);
+  if (!connectionString) {
+    return false;
+  }
+  const db = new Sequelize(connectionString, {
+    logging: false,
+    dialectOptions: { connectionTimeoutMillis: 2000 },
+  });
+
+  try {
+    return await isPGroongaAvailable(db);
+  } catch {
+    return false;
+  } finally {
+    await db.close().catch(() => undefined);
+  }
+}
+
+const serverTestConfig = {
+  globals: true,
+  environment: "node" as const,
+  setupFiles: [
+    "./__mocks__/console.js",
+    "./server/test/setupMocks.ts",
+    "./server/test/setup.ts",
+  ],
+  globalSetup: ["./server/test/globalTeardown.ts"],
+  fileParallelism: true,
+};
+
+export default defineConfig(async () => {
+  const pgroongaAvailable = await hasPGroongaOnTestDatabase();
+  if (!pgroongaAvailable) {
+    // oxlint-disable-next-line no-console
+    console.warn(
+      "PGroonga is not installed on the test database server, the search-pgroonga tests will not run."
+    );
+  }
+
+  return {
+    ...sharedConfig,
+    test: {
+      globals: true,
+      pool: "threads",
+      // Unhandled promise rejections are logged but don't fail tests on their own.
+      dangerouslyIgnoreUnhandledErrors: true,
+      projects: [
+        {
+          ...sharedConfig,
+          test: {
+            ...serverTestConfig,
+            name: "server",
+            include: serverTestFiles,
+            exclude: [...configDefaults.exclude, ...pgroongaTestFiles],
           },
-          include: ["app/**/*.test.{ts,tsx}"],
-          setupFiles: ["./__mocks__/window.js", "./app/test/setup.ts"],
         },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "shared-node",
-          globals: true,
-          environment: "node",
-          include: ["shared/**/*.test.{ts,tsx}"],
-          setupFiles: ["./__mocks__/console.js", "./shared/test/setup.ts"],
-        },
-      },
-      {
-        ...sharedConfig,
-        resolve: { alias: [fileMockAlias, ...aliasesAsArray] },
-        test: {
-          name: "shared-jsdom",
-          globals: true,
-          environment: "jsdom",
-          environmentOptions: {
-            jsdom: { url: "http://localhost" },
+        ...(pgroongaAvailable
+          ? [
+              {
+                ...sharedConfig,
+                test: {
+                  ...serverTestConfig,
+                  name: "server-pgroonga",
+                  include: [...pgroongaTestFiles, ...searchProviderTestFiles],
+                  env: { SEARCH_PROVIDER: "pgroonga" },
+                  globalSetup: [
+                    "./plugins/search-pgroonga/server/globalSetup.ts",
+                  ],
+                },
+              },
+            ]
+          : []),
+        {
+          ...sharedConfig,
+          resolve: { alias: [fileMockAlias, ...aliasesAsArray] },
+          test: {
+            name: "app",
+            globals: true,
+            environment: "jsdom",
+            environmentOptions: {
+              jsdom: { url: "http://localhost" },
+            },
+            include: ["app/**/*.test.{ts,tsx}"],
+            setupFiles: ["./__mocks__/window.js", "./app/test/setup.ts"],
           },
-          include: ["shared/**/*.test.{ts,tsx}"],
-          setupFiles: ["./__mocks__/window.js", "./shared/test/setupJsdom.ts"],
         },
-      },
-    ],
-  },
+        {
+          ...sharedConfig,
+          test: {
+            name: "shared-node",
+            globals: true,
+            environment: "node",
+            include: ["shared/**/*.test.{ts,tsx}"],
+            setupFiles: ["./__mocks__/console.js", "./shared/test/setup.ts"],
+          },
+        },
+        {
+          ...sharedConfig,
+          resolve: { alias: [fileMockAlias, ...aliasesAsArray] },
+          test: {
+            name: "shared-jsdom",
+            globals: true,
+            environment: "jsdom",
+            environmentOptions: {
+              jsdom: { url: "http://localhost" },
+            },
+            include: ["shared/**/*.test.{ts,tsx}"],
+            setupFiles: [
+              "./__mocks__/window.js",
+              "./shared/test/setupJsdom.ts",
+            ],
+          },
+        },
+      ],
+    },
+  };
 });
