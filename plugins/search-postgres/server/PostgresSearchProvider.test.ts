@@ -15,6 +15,10 @@ import PostgresSearchProvider from "./PostgresSearchProvider";
 
 const provider = SearchProviderManager.getProvider();
 
+// The PGroonga provider, which runs these tests too, matches any substring and
+// has no stop words, so tests of the full-text parser do not apply to it.
+const matchesSubstrings = provider.id !== "postgres";
+
 beforeEach(async () => {
   vi.resetAllMocks();
   await buildDocument();
@@ -812,7 +816,7 @@ describe("PostgresSearchProvider", () => {
         "WS_FP4TOFP8_CVT",
         "config.2.ws_fp4tofp8_cvt",
         "registers ws_fp4tofp8_cvt",
-        "the ws_fp4tofp8_cvt",
+        ...(matchesSubstrings ? [] : ["the ws_fp4tofp8_cvt"]),
       ]) {
         const { results } = await provider.searchForUser(user, { query });
         expect(results.map((result) => result.document?.id)).toEqual([
@@ -883,9 +887,10 @@ describe("PostgresSearchProvider", () => {
       });
       expect(results.length).toBe(1);
       // The earlier "world" is highlighted too, which must not move the start
-      // of the slice into the middle of a word.
-      expect(results[0].context).toBe(
-        " conflict that involved many nations over six years. Later on, <b>hello world</b> became the canonical first program"
+      // of the slice into the middle of a word. The PGroonga provider, which
+      // runs this test too, keeps the final period.
+      expect(results[0].context).toMatch(
+        /^ conflict that involved many nations over six years\. Later on, <b>hello world<\/b> became the canonical first program\.?$/
       );
     });
 
@@ -997,7 +1002,11 @@ describe("PostgresSearchProvider", () => {
       ]);
     });
 
-    it("should not retry as a quoted query for short or stop word queries", async () => {
+    it("should not retry as a quoted query for short or stop word queries", async ({
+      skip,
+    }) => {
+      skip(matchesSubstrings);
+
       const team = await buildTeam();
       const user = await buildUser({ teamId: team.id });
       const collection = await buildCollection({
@@ -1018,7 +1027,11 @@ describe("PostgresSearchProvider", () => {
       }
     });
 
-    it("should not retry as a quoted query when paging past earlier results", async () => {
+    it("should not retry as a quoted query when paging past earlier results", async ({
+      skip,
+    }) => {
+      skip(matchesSubstrings);
+
       const team = await buildTeam();
       const user = await buildUser({ teamId: team.id });
       const collection = await buildCollection({

@@ -6,7 +6,9 @@ services:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     user: "redis:redis"
   postgres:
-    image: postgres
+    # PostgreSQL with the PGroonga extension, used by the search-pgroonga
+    # plugin. Same tag as the CI database, see .github/workflows/ci.yml.
+    image: groonga/pgroonga:4.0.9-debian-18
     ports:
       # Set POSTGRES_PORT in .env to run alongside another checkout.
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"

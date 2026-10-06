@@ -1,5 +1,4 @@
 import { SearchableModel } from "@shared/types";
-import env from "@server/env";
 import { Document, Collection, Comment } from "@server/models";
 import BaseProcessor from "@server/queues/processors/BaseProcessor";
 import type {
@@ -36,19 +35,27 @@ export default class SearchIndexProcessor extends BaseProcessor {
   ];
 
   /**
-   * Only queue events when an external search provider is in use. The built-in
-   * Postgres provider is indexed by tsvector triggers, so its jobs would be empty.
+   * Only queue events when an external search provider is in use. A provider
+   * whose index the database maintains (the built-in Postgres provider and
+   * those derived from it) is indexed by triggers, so its jobs would be empty.
    *
-   * @returns true if the active search provider is not Postgres.
+   * @returns true if the active search provider is not indexed by the database.
    */
   static async shouldQueue(): Promise<boolean> {
-    return env.SEARCH_PROVIDER !== "postgres";
+    return !SearchProviderManager.getProvider().indexedByDatabase;
   }
 
   async perform(
     event: DocumentEvent | DocumentMovedEvent | CollectionEvent | CommentEvent
   ): Promise<void> {
     const provider = SearchProviderManager.getProvider();
+
+    // A provider whose index the database maintains (the built-in Postgres
+    // provider and those derived from it) has nothing to do here, so skip
+    // loading the records its no-op methods would receive.
+    if (provider.indexedByDatabase) {
+      return;
+    }
 
     switch (event.name) {
       case "documents.publish":
