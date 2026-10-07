@@ -80,7 +80,7 @@ function Figma() {
                     <Time
                       dateTime={linkedAccountIntegration.createdAt}
                       relative={false}
-                      format={{ en_US: "MMMM d, y" }}
+                      time={false}
                     />
                   </>
                 }

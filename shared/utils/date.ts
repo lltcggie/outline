@@ -259,47 +259,6 @@ export function unicodeCLDRtoISO639(locale: string) {
   return locale.split("_")[0];
 }
 
-/**
- * Returns the current date as a string formatted depending on current locale.
- *
- * @returns The current date
- */
-export function getCurrentDateAsString(locale?: Intl.LocalesArgument) {
-  return new Date().toLocaleDateString(locale, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-/**
- * Returns the current time as a string formatted depending on current locale.
- *
- * @returns The current time
- */
-export function getCurrentTimeAsString(locale?: Intl.LocalesArgument) {
-  return new Date().toLocaleTimeString(locale, {
-    hour: "numeric",
-    minute: "numeric",
-  });
-}
-
-/**
- * Returns the current date and time as a string formatted depending on current
- * locale.
- *
- * @returns The current date and time
- */
-export function getCurrentDateTimeAsString(locale?: Intl.LocalesArgument) {
-  return new Date().toLocaleString(locale, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    hour: "numeric",
-    minute: "numeric",
-  });
-}
-
 const locales = {
   ca_ES: ca,
   cs_CZ: cs,

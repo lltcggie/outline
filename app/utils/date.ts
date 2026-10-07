@@ -10,6 +10,7 @@ import {
   isPast,
 } from "date-fns";
 import type { TFunction } from "i18next";
+import type { DateTimeFormatter } from "@shared/utils/DateTimeFormatter";
 import type { locales } from "@shared/utils/date";
 import { dateLocale } from "@shared/utils/date";
 
@@ -81,16 +82,15 @@ export function dateToHeading(
  *
  * @param dateTime The date string to convert
  * @param t The translation function
- * @param userLocale The user's locale
+ * @param formatter The formatter writing out dates the way the user prefers
  */
 export function dateToExpiry(
   dateTime: string,
   t: TFunction,
-  userLocale: keyof typeof locales | null | undefined
+  formatter: DateTimeFormatter
 ) {
-  const date = Date.parse(dateTime);
+  const date = new Date(dateTime);
   const now = new Date();
-  const locale = dateLocale(userLocale);
 
   if (isYesterday(date)) {
     return t("Expired yesterday");
@@ -98,7 +98,7 @@ export function dateToExpiry(
 
   if (isPast(date)) {
     return `${t("Expired {{ date }}", {
-      date: formatDate(date, "MMM dd, yyyy", { locale }),
+      date: formatter.formatDate(date),
     })}`;
   }
 
@@ -112,13 +112,11 @@ export function dateToExpiry(
 
   if (isSameWeek(date, now)) {
     return t("Expires {{ date }}", {
-      date: formatDate(Date.parse(dateTime), "iiii", {
-        locale,
-      }),
+      date: formatter.formatWeekday(date),
     });
   }
 
   return t("Expires {{ date }}", {
-    date: formatDate(date, "MMM dd, yyyy", { locale }),
+    date: formatter.formatDate(date),
   });
 }

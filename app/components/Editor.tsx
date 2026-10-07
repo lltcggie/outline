@@ -44,7 +44,7 @@ function Editor({ ref, ...props }: Props & { ref?: React.Ref<SharedEditor> }) {
   const { t } = useTranslation();
   const embeds = useEmbeds(!shareId);
   const localRef = React.useRef<SharedEditor | null>(null);
-  const preferences = useCurrentUser({ rejectOnEmpty: false })?.preferences;
+  const user = useCurrentUser({ rejectOnEmpty: false });
   const previousCommentIds = React.useRef<string[] | undefined>(undefined);
 
   // Upload progress tracking for delayed toast
@@ -240,7 +240,8 @@ function Editor({ ref, ...props }: Props & { ref?: React.Ref<SharedEditor> }) {
               ref={mergeRefs([ref, localRef, handleRefChanged])}
               uploadFile={handleUploadFile}
               embeds={embeds}
-              userPreferences={preferences}
+              userPreferences={user?.preferences}
+              dateTimeFormatter={user?.dateTimeFormatter}
               {...props}
               onClickLink={handleClickLink}
               onChange={handleChange}

@@ -10,7 +10,13 @@ import { ThemeProvider } from "styled-components";
 import { errToString } from "@shared/utils/error";
 import { buildDarkTheme, buildLightTheme } from "@shared/styles/theme";
 import type { CustomTheme } from "@shared/types";
-import { CommentMarkStyle, TOCPosition, TeamPreference } from "@shared/types";
+import {
+  CommentMarkStyle,
+  DateFormat,
+  TOCPosition,
+  TeamPreference,
+  TimeFormat,
+} from "@shared/types";
 import { getBaseDomain } from "@shared/utils/domains";
 import { TeamValidation } from "@shared/validations";
 import Button from "~/components/Button";
@@ -26,6 +32,7 @@ import Switch from "~/components/Switch";
 import Text from "~/components/Text";
 import useCommentMarkStyleOptions from "~/hooks/useCommentMarkStyleOptions";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
+import useDateTimeFormatOptions from "~/hooks/useDateTimeFormatOptions";
 import usePolicy from "~/hooks/usePolicy";
 import useStores from "~/hooks/useStores";
 import isCloudHosted from "~/utils/isCloudHosted";
@@ -101,6 +108,23 @@ function Details() {
     setCommentMarkStyle(style as CommentMarkStyle);
   }, []);
 
+  const [dateFormat, setDateFormat] = useState(
+    team.getPreference(TeamPreference.DateFormat) || DateFormat.Locale
+  );
+  const [timeFormat, setTimeFormat] = useState(
+    team.getPreference(TeamPreference.TimeFormat) || TimeFormat.Locale
+  );
+
+  const { dateFormatOptions, timeFormatOptions } = useDateTimeFormatOptions();
+
+  const handleDateFormatChange = React.useCallback((value: string) => {
+    setDateFormat(value as DateFormat);
+  }, []);
+
+  const handleTimeFormatChange = React.useCallback((value: string) => {
+    setTimeFormat(value as TimeFormat);
+  }, []);
+
   const handleSubmit = React.useCallback(
     async (event?: React.SyntheticEvent) => {
       if (event) {
@@ -119,6 +143,8 @@ function Details() {
             customTheme,
             tocPosition,
             commentMarkStyle,
+            dateFormat,
+            timeFormat,
           },
         });
         toast.success(t("Settings saved"));
@@ -129,6 +155,8 @@ function Details() {
     [
       tocPosition,
       commentMarkStyle,
+      dateFormat,
+      timeFormat,
       team,
       name,
       description,
@@ -325,7 +353,6 @@ function Details() {
             />
           </SettingRow>
           <SettingRow
-            border={false}
             label={t("Comment highlight")}
             name={TeamPreference.CommentMarkStyle}
             description={t(
@@ -337,6 +364,37 @@ function Details() {
               value={commentMarkStyle}
               onChange={handleCommentMarkStyleChange}
               label={t("Comment highlight")}
+              labelHidden
+            />
+          </SettingRow>
+          <SettingRow
+            label={t("Date format")}
+            name={TeamPreference.DateFormat}
+            description={t(
+              "How dates are written out by default, for example in document history. This setting can be overridden by user preferences."
+            )}
+          >
+            <InputSelect
+              options={dateFormatOptions}
+              value={dateFormat}
+              onChange={handleDateFormatChange}
+              label={t("Date format")}
+              labelHidden
+            />
+          </SettingRow>
+          <SettingRow
+            border={false}
+            label={t("Time format")}
+            name={TeamPreference.TimeFormat}
+            description={t(
+              "Whether times use the 12-hour or 24-hour clock by default. This setting can be overridden by user preferences."
+            )}
+          >
+            <InputSelect
+              options={timeFormatOptions}
+              value={timeFormat}
+              onChange={handleTimeFormatChange}
+              label={t("Time format")}
               labelHidden
             />
           </SettingRow>

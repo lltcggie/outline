@@ -1,4 +1,4 @@
-import type { CommentMarkStyle } from "./team";
+import type { CommentMarkStyle, DateFormat, TimeFormat } from "./team";
 
 /** Sidebar sections that a user can reorder. */
 export enum SidebarSection {
@@ -36,6 +36,10 @@ export enum UserPreference {
   SidebarSectionOrder = "sidebarSectionOrder",
   /** How text with inline comments is highlighted in documents. */
   CommentMarkStyle = "commentMarkStyle",
+  /** How absolute dates are written out, e.g. in document history. */
+  DateFormat = "dateFormat",
+  /** How times of day are written out, e.g. in document history. */
+  TimeFormat = "timeFormat",
 }
 
 /** Styles of prefix that can be shown before headings. */
@@ -85,4 +89,6 @@ export type UserPreferences = {
   [UserPreference.NotificationBadge]?: NotificationBadgeType;
   [UserPreference.SidebarSectionOrder]?: SidebarSection[];
   [UserPreference.CommentMarkStyle]?: CommentMarkStyle;
+  [UserPreference.DateFormat]?: DateFormat;
+  [UserPreference.TimeFormat]?: TimeFormat;
 };
