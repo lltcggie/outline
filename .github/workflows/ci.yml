@@ -1,8 +1,9 @@
 name: CI
 
+# Fork: runs on the fork's default branch, main-custom. See docs/FORK.md.
 on:
   push:
-    branches: [main]
+    branches: [main-custom]
   pull_request:
 
 env:
