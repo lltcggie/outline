@@ -85,7 +85,7 @@ OAuthアプリケーションのスコープ（`read_api read_user`）とコー�
 
 別リポジトリ [outline-asana-unfurl](https://github.com/lltcggie/outline-asana-unfurl) のプラグインを `plugins/asana` として本体に取り込んだ。もとはコンパイル済みファイルをコンテナにマウントし、1つのトークン（`ASANA_ACCESS_TOKEN`）で全員分のプレビューを取得していた。取り込みにあたり、GitLab連携と同じく各ユーザーが自分のAsanaアカウントを連携する方式に変え、本体を変更できなかったために冗長だった部分も本体側で解消した。上流にAsana連携はない。
 
-- 管理者はAsanaのOAuthアプリケーションを作り、環境変数 `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` を設定する。各ユーザーは設定 → Asana の「Connect」で自分のAsanaアカウントを連携する（閲覧者・ゲストも可）。プレビューは本人のトークンだけで取得され、連携していないユーザーには通常のリンクとして表示される。1つのAsanaアカウントを連携できるのはワークスペース内で1人だけ。
+- 管理者はAsanaのOAuthアプリケーションを作り、環境変数 `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` を設定する。各ユーザーは設定 → Asana の「Connect」で自分のAsanaアカウントを連携する（閲覧者・ゲストも可）。プレビューは本人のトークンだけで取得され、連携していないユーザーには通常のリンクとして表示される。1つのAsanaアカウントを複数のOutlineアカウントが連携してもよく、各ユーザーが自分のトークンを持つ（GitLab連携は1人だけ）。
 - タスクはIssue型のメンションとして表示される（GitLabのIssueと同じ見た目）。インラインでは完了状態のアイコン・タスク名・セクション名、ホバーでは担当者・期限・説明（ノート）・所属するプロジェクトとセクションのラベル（プロジェクトの色付き）が出る。プロジェクトはProject型として、プロジェクトの色・名前・完了タスクの割合を表示し、ホバーでは説明・状態（アクティブ／アーカイブ）・オーナー・期日が出る。別リポジトリ版はURL型（汎用リンク表示）だった。
 - 表示文言（「担当」「期限」「完了」など）は閲覧者の言語設定で翻訳される。別リポジトリ版は日本語の直書きだった。
 - 貼り付けメニューの「メンション」は、連携の有無にかかわらず `ASANA_CLIENT_ID` が設定されていればタスク・プロジェクトのURLをIssue型・Project型にする。クライアントの `PluginManager` に `Hook.MentionProvider` を追加し、`plugins/asana/client/index.tsx` が登録したものを `app/utils/mention.ts` の `getMentionTypeForURL` が参照する。Markdown・API・MCPで作られたメンションはサーバー側の `MentionProvider` で型が決まる。
@@ -108,7 +108,7 @@ OAuthアプリケーションのスコープ（`read_api read_user`）とコー�
 | `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` | 任意 | OAuthアプリケーションのクライアントIDとシークレット。両方設定すると連携が有効になる。片方だけ設定すると起動時に環境変数の検証エラーで停止する。 |
 | `ASANA_OAUTH_SCOPES` | 任意 | 連携時に要求するスコープ（スペース区切り）。既定は `tasks:read projects:read users:read`。Full permissions のアプリケーションでは `default`。 |
 | `ASANA_SHOW_SECTION` | 任意 | タスク名の横にセクション名を表示するか。既定は `true`。 |
-| `ASANA_CACHE_SECONDS` | 任意 | タスク・プロジェクトの取得結果をユーザーごとにキャッシュする秒数（1以上。キャッシュは無効にできない）。既定は `300`。Asanaのレート制限（無料プラン 150回/分、有料プラン 1,500回/分）はトークン＝ユーザーごとに掛かる。制限に当たると、そのリンクは60秒ほど通常のリンクとして表示され、ログに `Failed to fetch resource from Asana` が出る。 |
+| `ASANA_CACHE_SECONDS` | 任意 | タスク・プロジェクトの取得結果をユーザーごとにキャッシュする秒数（1以上。キャッシュは無効にできない）。既定は `300`。Asanaのレート制限（無料プラン 150回/分、有料プラン 1,500回/分）は認可トークン（＝Outlineユーザー）ごとに掛かる。同じAsanaアカウントを複数のOutlineユーザーが連携していても、それぞれ別のトークンなので制限は独立している。制限に当たると、そのリンクは60秒ほど通常のリンクとして表示され、ログに `Failed to fetch resource from Asana` が出る。 |
 
 ### 既存のインスタンスの移行手順（別リポジトリ版のプラグインを使っていた場合）
 

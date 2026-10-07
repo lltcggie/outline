@@ -2,7 +2,6 @@ import { addSeconds } from "date-fns";
 import { truncate } from "es-toolkit/compat";
 import { t } from "i18next";
 import type { Transaction } from "sequelize";
-import { Op } from "sequelize";
 import { z } from "zod";
 import {
   IntegrationService,
@@ -268,38 +267,8 @@ export class Asana {
   }
 
   /**
-   * Whether an Asana account is linked by another user of a team. Only the
-   * existence is checked, so no other user's account or token is loaded.
-   *
-   * @param params.teamId the team to search.
-   * @param params.userId the user whose own linked account is disregarded.
-   * @param params.accountId the gid of the Asana account.
-   * @param options the query options.
-   * @returns true if another user of the team linked the account.
-   */
-  public static async isAccountLinkedByOtherUser(
-    {
-      teamId,
-      userId,
-      accountId,
-    }: { teamId: string; userId: string; accountId: string },
-    options: { transaction?: Transaction } = {}
-  ): Promise<boolean> {
-    const count = await Integration.count({
-      where: {
-        service: IntegrationService.Asana,
-        type: IntegrationType.LinkedAccount,
-        teamId,
-        userId: { [Op.ne]: userId },
-        "settings.asana.account.id": accountId,
-      },
-      transaction: options.transaction,
-    });
-    return count > 0;
-  }
-
-  /**
-   * Finds the Asana account a user linked.
+   * Finds the Asana account a user linked. The same Asana account may be
+   * linked by several users of a team, each user only ever gets their own.
    *
    * @param user the user that linked the account.
    * @param options.transaction the transaction to query within.

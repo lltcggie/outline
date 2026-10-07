@@ -1619,7 +1619,6 @@
   "Looking for answers": "回答を探しています",
   "Answer to \"{{ query }}\"": "「{{ query }}」への回答",
   "You need to accept the permissions in Asana to connect {{appName}} to your account. Try again?": "{{appName}} をあなたのアカウントに接続するには、Asana で権限を許可する必要があります。もう一度試しますか？",
-  "The Asana account is already linked by another user in this workspace.": "このAsanaアカウントは、このワークスペースの別のユーザーがすでに連携しています。",
   "Link your Asana account to enable previews of Asana tasks and projects in documents. Previews are fetched with your own Asana permissions and are only shown to you, other members only see what their own linked account can access.": "Asanaアカウントを連携すると、ドキュメント内でAsanaのタスクとプロジェクトのプレビューが表示されます。プレビューはあなた自身のAsanaの権限で取得され、あなたにだけ表示されます。ほかのメンバーには、それぞれが連携したアカウントでアクセスできる内容だけが表示されます。",
   "Disconnecting will prevent you from seeing previews of links from Asana in documents. Are you sure?": "連携を解除すると、ドキュメント内のAsanaのリンクのプレビューが表示されなくなります。よろしいですか？",
   "The Asana integration is currently disabled. Please set the associated environment variables and restart the server to enable the integration.": "現在、Asanaとの連携は無効になっています。\n関連する環境変数を正しく設定し、サーバーを再起動すると有効になります。",

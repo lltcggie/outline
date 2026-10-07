@@ -1550,7 +1550,6 @@
   "Expires {{ date }}": "Expires {{ date }}",
   "Connecting": "Connecting",
   "You need to accept the permissions in Asana to connect {{appName}} to your account. Try again?": "You need to accept the permissions in Asana to connect {{appName}} to your account. Try again?",
-  "The Asana account is already linked by another user in this workspace.": "The Asana account is already linked by another user in this workspace.",
   "Something went wrong while authenticating your request. Please try again.": "Something went wrong while authenticating your request. Please try again.",
   "Link your Asana account to enable previews of Asana tasks and projects in documents. Previews are fetched with your own Asana permissions and are only shown to you, other members only see what their own linked account can access.": "Link your Asana account to enable previews of Asana tasks and projects in documents. Previews are fetched with your own Asana permissions and are only shown to you, other members only see what their own linked account can access.",
   "Enabled on": "Enabled on",
