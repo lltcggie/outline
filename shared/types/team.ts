@@ -35,6 +35,14 @@ export enum CommentingAccess {
   Everyone = "everyone",
 }
 
+/** How text with inline comments is highlighted in documents. */
+export enum CommentMarkStyle {
+  /** A thin underline below the text, filled in on hover. */
+  Underline = "underline",
+  /** A filled background behind the text with a bottom border. */
+  Highlight = "highlight",
+}
+
 /** Workspace-level preferences. */
 export enum TeamPreference {
   /** Whether documents have a separate edit mode instead of always editing. */
@@ -69,6 +77,8 @@ export enum TeamPreference {
   PersonalDocs = "personalDocs",
   /** The number of days until new public share links expire, 0 for no expiry. */
   DefaultShareExpiryDays = "defaultShareExpiryDays",
+  /** How text with inline comments is highlighted in documents by default. */
+  CommentMarkStyle = "commentMarkStyle",
 }
 
 /** Workspace preference values, keyed by preference. */
@@ -89,4 +99,5 @@ export type TeamPreferences = {
   [TeamPreference.DisabledEmbeds]?: string[];
   [TeamPreference.PersonalDocs]?: boolean;
   [TeamPreference.DefaultShareExpiryDays]?: number;
+  [TeamPreference.CommentMarkStyle]?: CommentMarkStyle;
 };

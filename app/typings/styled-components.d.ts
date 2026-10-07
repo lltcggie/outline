@@ -1,4 +1,5 @@
 import "styled-components";
+import type { CommentMarkStyle } from "@shared/types";
 
 declare module "styled-components" {
   interface CodeTheme {
@@ -139,7 +140,12 @@ declare module "styled-components" {
     textDiffDeleted: string;
     textDiffDeletedBackground: string;
     placeholder: string;
+    commentMarkStyle: CommentMarkStyle;
     commentMarkBackground: string;
+    commentMarkHoverBackground: string;
+    commentMarkActiveBackground: string;
+    commentMarkHighlightBackground: string;
+    commentMarkHighlightBorder: string;
     commentedImageOutlineLight: string;
     commentedImageOutlineDark: string;
     sidebarBackground: string;

@@ -10,7 +10,12 @@ import { ThemeProvider } from "styled-components";
 import { errToString } from "@shared/utils/error";
 import { buildDarkTheme, buildLightTheme } from "@shared/styles/theme";
 import type { CustomTheme, TeamPreferences } from "@shared/types";
-import { TOCPosition, TeamPreference, UserPreference } from "@shared/types";
+import {
+  CommentMarkStyle,
+  TOCPosition,
+  TeamPreference,
+  UserPreference,
+} from "@shared/types";
 import { getBaseDomain } from "@shared/utils/domains";
 import { TeamValidation } from "@shared/validations";
 import { AvatarVariant } from "~/components/Avatar/Avatar";
@@ -24,6 +29,7 @@ import { InputSelect } from "~/components/InputSelect";
 import Scene from "~/components/Scene";
 import Switch from "~/components/Switch";
 import Text from "~/components/Text";
+import useCommentMarkStyleOptions from "~/hooks/useCommentMarkStyleOptions";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
 import useCurrentUser from "~/hooks/useCurrentUser";
 import usePolicy from "~/hooks/usePolicy";
@@ -243,6 +249,17 @@ function Details() {
     [savePreference]
   );
 
+  const commentMarkStyleOptions = useCommentMarkStyleOptions();
+
+  const handleCommentMarkStyleChange = React.useCallback(
+    (style: string) =>
+      savePreference(
+        TeamPreference.CommentMarkStyle,
+        style as CommentMarkStyle
+      ),
+    [savePreference]
+  );
+
   const handleSelectCollection = React.useCallback(
     (value: string) =>
       saveData({ defaultCollectionId: value === "home" ? null : value }),
@@ -406,6 +423,24 @@ function Details() {
                 }
                 onChange={handleTocPositionChange}
                 label={t("Table of contents position")}
+                labelHidden
+              />
+            </SettingRow>
+            <SettingRow
+              label={t("Comment highlight")}
+              name={TeamPreference.CommentMarkStyle}
+              description={t(
+                "How text with inline comments is highlighted in documents by default. This setting can be overridden by user preferences."
+              )}
+            >
+              <InputSelect
+                options={commentMarkStyleOptions}
+                value={
+                  team.getPreference(TeamPreference.CommentMarkStyle) ||
+                  CommentMarkStyle.Underline
+                }
+                onChange={handleCommentMarkStyleChange}
+                label={t("Comment highlight")}
                 labelHidden
               />
             </SettingRow>

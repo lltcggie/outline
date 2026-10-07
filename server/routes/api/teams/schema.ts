@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   CommentingAccess,
+  CommentMarkStyle,
   EmailDisplay,
   TeamPreference,
   TOCPosition,
@@ -89,6 +90,8 @@ export const TeamsUpdateSchema = BaseSchema.extend({
               error: "must be one of the available expiry periods",
             }
           ),
+        /** How text with inline comments is highlighted in documents by default. */
+        [TeamPreference.CommentMarkStyle]: z.enum(CommentMarkStyle),
       })
       .partial()
       .optional(),

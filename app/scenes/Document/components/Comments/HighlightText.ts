@@ -21,7 +21,7 @@ export const HighlightedText = styled(Text).attrs({ size: "small" })`
     inset-inline-start: 0;
     top: 2px;
     bottom: 2px;
-    background: ${s("commentMarkBackground")};
+    background: ${s("commentMarkActiveBackground")};
     border-radius: 2px;
   }
 `;

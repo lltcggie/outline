@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  CommentMarkStyle,
   NotificationBadgeType,
   NotificationEventType,
   SidebarSection,
@@ -129,6 +130,7 @@ export const UsersUpdateSchema = BaseSchema.extend({
         [UserPreference.ShowDocumentStats]: z.boolean(),
         [UserPreference.NotificationBadge]: z.enum(NotificationBadgeType),
         [UserPreference.SidebarSectionOrder]: z.array(z.enum(SidebarSection)),
+        [UserPreference.CommentMarkStyle]: z.enum(CommentMarkStyle),
       })
       .partial()
       .optional(),

@@ -11,6 +11,7 @@ import {
   UserPreference,
   EmailDisplay,
   CommentingAccess,
+  CommentMarkStyle,
   NotificationBadgeType,
 } from "./types";
 
@@ -108,6 +109,7 @@ export const TeamPreferenceDefaults: TeamPreferences = {
   [TeamPreference.DisabledEmbeds]: [],
   [TeamPreference.PersonalDocs]: true,
   [TeamPreference.DefaultShareExpiryDays]: 0,
+  [TeamPreference.CommentMarkStyle]: CommentMarkStyle.Underline,
 };
 
 export const DocumentPreferenceDefaults: DocumentPreferences = {
