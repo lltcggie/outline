@@ -1,6 +1,7 @@
 import { isArray, sortBy } from "es-toolkit/compat";
 import { action, makeObservable, observable, runInAction } from "mobx";
 import type { IObservableArray } from "mobx";
+import type { MentionType } from "@shared/types";
 import type Team from "~/models/Team";
 import type User from "~/models/User";
 import type { LazyComponent } from "~/components/LazyLoad";
@@ -15,6 +16,7 @@ export enum Hook {
   Settings = "settings",
   Imports = "imports",
   Icon = "icon",
+  MentionProvider = "mentionProvider",
 }
 
 /**
@@ -46,6 +48,11 @@ type PluginValueMap = {
     action: React.ReactElement;
   };
   [Hook.Icon]: React.ElementType;
+  /**
+   * Recognizes the type of mention a pasted URL is converted to, for services
+   * that are not configured as a workspace integration.
+   */
+  [Hook.MentionProvider]: (url: URL) => MentionType | undefined;
 };
 
 export type Plugin<T extends Hook> = {

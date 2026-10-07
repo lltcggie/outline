@@ -1,6 +1,7 @@
 import type { IntegrationSettings, IntegrationType } from "@shared/types";
 import { IntegrationService, MentionType } from "@shared/types";
 import type Integration from "~/models/Integration";
+import { Hook, PluginManager } from "~/utils/PluginManager";
 
 const gitlabSystemPaths = new Set([
   "explore",
@@ -138,4 +139,38 @@ export const determineMentionType = ({
     default:
       return;
   }
+};
+
+/**
+ * Determines the type of mention a pasted URL is converted to: the type a
+ * workspace integration recognizes, the type of a resource on a service that
+ * members link their own accounts to, or otherwise a plain URL mention.
+ *
+ * @param options the URL and the workspace integrations to check against.
+ * @returns the mention type, or undefined if the URL cannot be mentioned.
+ */
+export const getMentionTypeForURL = ({
+  url,
+  integrations,
+}: {
+  url: URL;
+  integrations: Integration[];
+}): MentionType | undefined => {
+  const integration = integrations.find((candidate) =>
+    isURLMentionable({ url, integration: candidate })
+  );
+  if (integration) {
+    return determineMentionType({ url, integration });
+  }
+
+  // Services that members link their own accounts to have no workspace
+  // integration, the plugin recognizes their URLs instead.
+  for (const provider of PluginManager.getHooks(Hook.MentionProvider)) {
+    const type = provider.value(url);
+    if (type) {
+      return type;
+    }
+  }
+
+  return MentionType.URL;
 };

@@ -5,7 +5,7 @@ import { Backticks } from "@shared/components/Backticks";
 import { IssueStatusIcon } from "@shared/components/IssueStatusIcon";
 import { richExtensions } from "@shared/editor/nodes";
 import type { UnfurlResourceType, UnfurlResponse } from "@shared/types";
-import { IntegrationService } from "@shared/types";
+import { getIssueTrackerService } from "@shared/utils/integrations";
 import { Avatar } from "~/components/Avatar";
 import Editor from "~/components/Editor";
 import Flex from "~/components/Flex";
@@ -28,13 +28,7 @@ const HoverPreviewIssue = React.forwardRef(function HoverPreviewIssue_(
   ref: React.Ref<HTMLDivElement>
 ) {
   const authorName = author.name;
-  const urlObj = new URL(url);
-  const service =
-    urlObj.hostname === "linear.app"
-      ? IntegrationService.Linear
-      : urlObj.hostname === "github.com"
-        ? IntegrationService.GitHub
-        : IntegrationService.GitLab;
+  const service = getIssueTrackerService(url);
 
   return (
     <Preview as="a" href={url} target="_blank" rel="noopener noreferrer">
@@ -54,13 +48,33 @@ const HoverPreviewIssue = React.forwardRef(function HoverPreviewIssue_(
                 </span>
               </Title>
               <Flex align="center" gap={6}>
-                <Avatar src={author.avatarUrl} size={18} />
-                <Info>
-                  <Trans>
-                    {{ authorName }} created{" "}
-                    <Time dateTime={createdAt} addSuffix />
-                  </Trans>
-                </Info>
+                {authorName ? (
+                  <>
+                    <Avatar
+                      // Shown as an initial when the tracker has no avatar
+                      // for the author, rather than an empty circle.
+                      model={{
+                        name: authorName,
+                        avatarUrl: author.avatarUrl || null,
+                      }}
+                      size={18}
+                    />
+                    <Info>
+                      <Trans>
+                        {{ authorName }} created{" "}
+                        <Time dateTime={createdAt} addSuffix />
+                      </Trans>
+                    </Info>
+                  </>
+                ) : (
+                  // Some trackers do not reveal who created an issue, Asana
+                  // only returns the name of the requesting user.
+                  <Info>
+                    <Trans>
+                      Created <Time dateTime={createdAt} addSuffix />
+                    </Trans>
+                  </Info>
+                )}
               </Flex>
               {description && (
                 <Description as="div">

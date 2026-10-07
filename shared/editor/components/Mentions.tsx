@@ -24,13 +24,13 @@ import Spinner from "../../components/Spinner";
 import Text from "../../components/Text";
 import useStores from "../../hooks/useStores";
 import {
-  IntegrationService,
   UnfurlResourceType,
   type JSONValue,
   type UnfurlResponse,
 } from "../../types";
 import { cn } from "../styles/utils";
 import type { ComponentProps } from "../types";
+import { getIssueTrackerService } from "../../utils/integrations";
 import { toDisplayUrl, sanitizeImageSrc } from "../../utils/urls";
 import Squircle from "../../components/Squircle";
 
@@ -294,19 +294,7 @@ export const MentionIssue = observer((props: ComponentProps) => {
   }
 
   const issue = unfurl as UnfurlResponse[UnfurlResourceType.Issue];
-
-  let service = IntegrationService.GitLab;
-  try {
-    const parsedUrl = new URL(issue.url);
-    service =
-      parsedUrl.hostname === "github.com"
-        ? IntegrationService.GitHub
-        : parsedUrl.hostname === "linear.app"
-          ? IntegrationService.Linear
-          : IntegrationService.GitLab;
-  } catch {
-    // Invalid URL in unfurl data, default to GitLab
-  }
+  const service = getIssueTrackerService(issue.url);
 
   return (
     <a

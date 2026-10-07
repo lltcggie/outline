@@ -170,6 +170,7 @@ export enum IntegrationType {
 }
 
 export enum IntegrationService {
+  Asana = "asana",
   Diagrams = "diagrams",
   Grist = "grist",
   Slack = "slack",
@@ -203,12 +204,14 @@ export const ImportableIntegrationService = {
 
 export type IssueTrackerIntegrationService = Extract<
   IntegrationService,
+  | IntegrationService.Asana
   | IntegrationService.GitHub
   | IntegrationService.GitLab
   | IntegrationService.Linear
 >;
 
 export const IssueTrackerIntegrationService = {
+  Asana: IntegrationService.Asana,
   GitHub: IntegrationService.GitHub,
   GitLab: IntegrationService.GitLab,
   Linear: IntegrationService.Linear,
@@ -306,6 +309,14 @@ export type IntegrationSettings<T> = T extends IntegrationType.Embed
             }
           : T extends IntegrationType.LinkedAccount
             ? {
+                asana?: {
+                  account: {
+                    id: string;
+                    name: string;
+                    email?: string;
+                    avatarUrl?: string;
+                  };
+                };
                 slack?: { serviceTeamId: string; serviceUserId: string };
                 figma?: {
                   account: {
