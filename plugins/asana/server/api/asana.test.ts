@@ -2,6 +2,7 @@
 import { IntegrationService, IntegrationType } from "@shared/types";
 import { Integration, IntegrationAuthentication } from "@server/models";
 import type { User } from "@server/models";
+import IntegrationDeletedProcessor from "@server/queues/processors/IntegrationDeletedProcessor";
 import { buildAdmin, buildUser, buildViewer } from "@server/test/factories";
 import { getTestServer } from "@server/test/support";
 import { AsanaOAuthNonceCookie, AsanaUtils } from "../../shared/AsanaUtils";
@@ -210,41 +211,25 @@ describe("#asana.callback", () => {
     expect(linked[0].settings.asana?.account.id).toEqual("2");
   });
 
-  it("should not overwrite another user's linked account", async () => {
+  it("should let several users link the same Asana account", async () => {
     const admin = await buildAdmin();
     const userA = await buildUser({ teamId: admin.teamId });
     const userB = await buildUser({ teamId: admin.teamId });
 
     await callback(userA, "1");
-    await callback(userB, "2");
+    const res = await callback(userB, "1");
 
+    expect(res.status).toEqual(302);
+    expect(res.headers.get("location")).not.toContain("error");
+
+    // Each user keeps a linked account and tokens of their own.
     const [linkedA] = await findLinkedAccounts(userA);
     const [linkedB] = await findLinkedAccounts(userB);
+    expect(linkedA.settings.asana?.account.id).toEqual("1");
+    expect(linkedB.settings.asana?.account.id).toEqual("1");
+    expect(linkedA.id).not.toEqual(linkedB.id);
     expect(linkedA.authentication.token).toEqual(`token-${userA.id}`);
     expect(linkedB.authentication.token).toEqual(`token-${userB.id}`);
-  });
-
-  it("should reject an Asana account already linked by another user", async () => {
-    const admin = await buildAdmin();
-    const userA = await buildUser({ teamId: admin.teamId });
-    const userB = await buildUser({ teamId: admin.teamId });
-
-    await callback(userA, "1");
-    const res = await callback(userB, "1");
-
-    expect(res.headers.get("location")).toContain("duplicate_account");
-    expect(await findLinkedAccounts(userB)).toHaveLength(0);
-  });
-
-  it("should allow the same Asana account in another workspace", async () => {
-    const userA = await buildUser();
-    const userB = await buildUser();
-
-    await callback(userA, "1");
-    const res = await callback(userB, "1");
-
-    expect(res.headers.get("location")).not.toContain("error");
-    expect(await findLinkedAccounts(userB)).toHaveLength(1);
   });
 
   it("should redirect with an error when Asana rejects the code", async () => {
@@ -283,7 +268,7 @@ describe("#asana.callback", () => {
   });
 });
 
-describe("#integrations.list", () => {
+describe("#integrations", () => {
   it("should not return other users' Asana accounts", async () => {
     const admin = await buildAdmin();
     const userA = await buildUser({ teamId: admin.teamId });
@@ -305,14 +290,38 @@ describe("#integrations.list", () => {
     expect(ownBody.data[0].settings.asana.account.name).toEqual("asana-1");
   });
 
-  it("should let a user remove their own linked account", async () => {
-    const user = await buildUser();
-    await callback(user, "1");
-    const [linked] = await findLinkedAccounts(user);
+  it("should let a user remove their own linked account but not another user's link to the same Asana account", async () => {
+    const admin = await buildAdmin();
+    const userA = await buildUser({ teamId: admin.teamId });
+    const userB = await buildUser({ teamId: admin.teamId });
+    await callback(userA, "1");
+    await callback(userB, "1");
+    const [linkedA] = await findLinkedAccounts(userA);
 
-    const res = await server.post("/api/integrations.delete", user, {
-      body: { id: linked.id },
+    const res = await server.post("/api/integrations.delete", userA, {
+      body: { id: linkedA.id },
     });
     expect(res.status).toEqual(200);
+
+    // The processor of the delete event removes the account for good, along
+    // with its tokens.
+    await new IntegrationDeletedProcessor().perform({
+      name: "integrations.delete",
+      modelId: linkedA.id,
+      teamId: userA.teamId,
+      actorId: userA.id,
+      ip: "127.0.0.1",
+    });
+
+    expect(await findLinkedAccounts(userA)).toHaveLength(0);
+    expect(
+      await IntegrationAuthentication.count({
+        where: { service: IntegrationService.Asana, userId: userA.id },
+      })
+    ).toEqual(0);
+
+    const [linkedB] = await findLinkedAccounts(userB);
+    expect(linkedB.settings.asana?.account.id).toEqual("1");
+    expect(linkedB.authentication.token).toEqual(`token-${userB.id}`);
   });
 });

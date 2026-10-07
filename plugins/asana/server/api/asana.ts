@@ -106,23 +106,15 @@ router.get(
       // The transaction is managed here rather than by the transaction
       // middleware, so that a failure part way through the writes is rolled
       // back before it is reported below instead of being committed.
-      const duplicate = await sequelize.transaction(async (transaction) => {
-        // An Asana account can only be linked by one user in the workspace.
-        // The check and the write below are serialized per workspace, as two
-        // users completing the callback at once would otherwise both pass.
+      await sequelize.transaction(async (transaction) => {
+        // Two callbacks of the same user completing at once would both find
+        // no existing account and link twice, so they are serialized per
+        // user.
         await LockHelper.acquire(
           sequelize,
-          `asana.link:${user.teamId}`,
+          `asana.link:${user.teamId}:${user.id}`,
           transaction
         );
-        if (
-          await Asana.isAccountLinkedByOtherUser(
-            { teamId: user.teamId, userId: user.id, accountId: account.gid },
-            { transaction }
-          )
-        ) {
-          return true;
-        }
 
         // Only ever update the user's own linked account, never another
         // user's. An account whose authentication is missing is replaced.
@@ -171,12 +163,9 @@ router.get(
             RedisPrefixHelper.getUnfurlPrefix(user.teamId, user.id)
           );
         });
-        return false;
       });
 
-      ctx.redirect(
-        duplicate ? AsanaUtils.errorUrl("duplicate_account") : AsanaUtils.url
-      );
+      ctx.redirect(AsanaUtils.url);
     } catch (err) {
       Logger.error(
         "Encountered error during Asana OAuth callback",

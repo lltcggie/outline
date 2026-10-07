@@ -68,11 +68,6 @@ function Asana() {
               You need to accept the permissions in Asana to connect{" "}
               {{ appName }} to your account. Try again?
             </Trans>
-          ) : error === "duplicate_account" ? (
-            <Trans>
-              The Asana account is already linked by another user in this
-              workspace.
-            </Trans>
           ) : (
             <Trans>
               Something went wrong while authenticating your request. Please try
