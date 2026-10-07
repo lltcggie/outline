@@ -1,15 +1,10 @@
 import * as React from "react";
-import type { locales } from "@shared/utils/date";
 import Tooltip from "~/components/Tooltip";
+import type { Props as LocaleTimeProps } from "~/hooks/useLocaleTime";
 import { useLocaleTime } from "~/hooks/useLocaleTime";
 
-export type Props = {
+export type Props = LocaleTimeProps & {
   children?: React.ReactNode;
-  dateTime: string;
-  addSuffix?: boolean;
-  shorten?: boolean;
-  relative?: boolean;
-  format?: Partial<Record<keyof typeof locales, string>>;
   /** Additional content shown below the date in the tooltip. */
   tooltipDetail?: React.ReactNode;
 };

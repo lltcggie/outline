@@ -5,7 +5,6 @@ import {
   IntegrationType,
   UnfurlResourceType,
 } from "@shared/types";
-import { dateToReadable } from "@shared/utils/date";
 import Logger from "@server/logging/Logger";
 import { Event, Integration, IntegrationAuthentication } from "@server/models";
 import type { User } from "@server/models";
@@ -134,7 +133,8 @@ describe("Asana.unfurl", () => {
   });
 
   it("should unfurl a task as an issue with the user's own token", async () => {
-    const user = await buildUser();
+    // A zone behind the process's (UTC): the due date must not slip a day.
+    const user = await buildUser({ timezone: "America/Los_Angeles" });
     const other = await buildUser({ teamId: user.teamId });
     await buildLinkedAccount(user);
     await buildLinkedAccount(other);
@@ -151,8 +151,9 @@ describe("Asana.unfurl", () => {
       // The section of the project in the URL is preferred.
       id: "In progress",
       title: "Secret task",
-      // The due date is written out in the user's language.
-      description: `Assigned to Alice · Due ${dateToReadable("2026-10-31", user.language)}\n\nSecret notes`,
+      // The due date is written out in the user's language and date format,
+      // as the calendar date Asana gave rather than shifted to the user's zone.
+      description: "Assigned to Alice · Due October 31, 2026\n\nSecret notes",
       author: { name: "Bob", avatarUrl: "" },
       labels: [
         { name: "Other project / Backlog", color: "#4573d2" },

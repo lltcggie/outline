@@ -1,14 +1,12 @@
-import { format as formatDate } from "date-fns";
 import { observer } from "mobx-react";
 import { useTranslation } from "react-i18next";
 import styled, { useTheme } from "styled-components";
 import { s } from "@shared/styles";
-import { dateLocale } from "@shared/utils/date";
 import ButtonLink from "~/components/ButtonLink";
 import Text from "~/components/Text";
 import type Share from "~/models/Share";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import usePolicy from "~/hooks/usePolicy";
-import useUserLocale from "~/hooks/useUserLocale";
 import { ShareNotice, StyledInfoIcon } from ".";
 
 interface Props {
@@ -27,7 +25,7 @@ export const ShareExpiredNotice = observer(function ShareExpiredNotice({
 }: Props) {
   const { t } = useTranslation();
   const theme = useTheme();
-  const userLocale = useUserLocale();
+  const formatter = useDateTimeFormatter();
   const can = usePolicy(share);
 
   if (!share?.published || !share.expiresAt || !share.isExpired) {
@@ -39,9 +37,7 @@ export const ShareExpiredNotice = observer(function ShareExpiredNotice({
       <StyledInfoIcon color={theme.textTertiary} />
       <Text type="tertiary" size="xsmall">
         {t("This link expired on {{ date }} and can no longer be accessed.", {
-          date: formatDate(new Date(share.expiresAt), "MMM dd, yyyy", {
-            locale: dateLocale(userLocale),
-          }),
+          date: formatter.formatDate(new Date(share.expiresAt)),
         })}
         {can.update && (
           <>

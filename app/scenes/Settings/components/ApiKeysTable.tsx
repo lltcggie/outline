@@ -18,7 +18,7 @@ import Text from "~/components/Text";
 import Time from "~/components/Time";
 import Tooltip from "~/components/Tooltip";
 import { useApiKeyMenuActions } from "~/hooks/useApiKeyMenuActions";
-import useUserLocale from "~/hooks/useUserLocale";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import ApiKeyMenu from "~/menus/ApiKeyMenu";
 import { HStack } from "~/components/primitives/HStack";
 import { dateToExpiry } from "~/utils/date";
@@ -49,7 +49,7 @@ const ApiKeyRowContextMenu = observer(function ApiKeyRowContextMenu({
 
 export const ApiKeysTable = observer(function ApiKeysTable(props: Props) {
   const { t } = useTranslation();
-  const userLocale = useUserLocale();
+  const formatter = useDateTimeFormatter();
 
   const applyContextMenu = useCallback(
     (apiKey: ApiKey, rowElement: React.ReactNode) => (
@@ -143,7 +143,7 @@ export const ApiKeysTable = observer(function ApiKeysTable(props: Props) {
             </Text>
           ) : apiKey.expiresAt ? (
             <Text type="tertiary">
-              {dateToExpiry(apiKey.expiresAt, t, userLocale)}
+              {dateToExpiry(apiKey.expiresAt, t, formatter)}
             </Text>
           ) : (
             <Text type="tertiary">{t("No expiry")}</Text>
@@ -157,7 +157,7 @@ export const ApiKeysTable = observer(function ApiKeysTable(props: Props) {
         width: "50px",
       },
     ],
-    [t, userLocale]
+    [t, formatter]
   );
 
   return (

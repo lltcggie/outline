@@ -8,7 +8,7 @@ import {
   IntegrationType,
   UnfurlResourceType,
 } from "@shared/types";
-import { dateToReadable } from "@shared/utils/date";
+import { parseISODate } from "@shared/utils/date";
 import { errToString, toError } from "@shared/utils/error";
 import { createContext } from "@server/context";
 import Logger from "@server/logging/Logger";
@@ -499,6 +499,18 @@ export class Asana {
       memberships[0];
     const section = membership?.section?.name ?? "";
 
+    // The due date is written out the way the actor prefers to see dates,
+    // falling back to Asana's own value when it cannot be parsed. It is a
+    // calendar date without a time or zone that parseISODate resolves to the
+    // process's local midnight, so it is read back in that same zone rather
+    // than the actor's, where it could land on the previous day.
+    const dueDate = task.due_on ? parseISODate(task.due_on) : null;
+    const due = dueDate
+      ? actor.dateTimeFormatter.formatDate(dueDate, {
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        })
+      : task.due_on;
+
     // The line is rendered as Markdown together with the notes, so it is
     // escaped as a whole: the translation and the date are not trusted to be
     // free of punctuation any more than the name is.
@@ -507,12 +519,7 @@ export class Asana {
         task.assignee
           ? t("Assigned to {{ name }}", { name: task.assignee.name, ...lng })
           : null,
-        task.due_on
-          ? t("Due {{ date }}", {
-              date: dateToReadable(task.due_on, actor.language),
-              ...lng,
-            })
-          : null,
+        due ? t("Due {{ date }}", { date: due, ...lng }) : null,
       ]
         .filter(Boolean)
         .join(" · ")

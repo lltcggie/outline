@@ -43,6 +43,30 @@ export enum CommentMarkStyle {
   Highlight = "highlight",
 }
 
+/** How absolute dates are written out. */
+export enum DateFormat {
+  /** The long form of the user's language, e.g. "October 7, 2026". */
+  Locale = "locale",
+  /** Year, month, day separated by hyphens, e.g. "2026-10-07". */
+  ISO = "iso",
+  /** Year, month, day separated by slashes, e.g. "2026/10/07". */
+  YearMonthDay = "yearMonthDay",
+  /** Day, month, year separated by slashes, e.g. "07/10/2026". */
+  DayMonthYear = "dayMonthYear",
+  /** Month, day, year separated by slashes, e.g. "10/07/2026". */
+  MonthDayYear = "monthDayYear",
+}
+
+/** How times of day are written out. */
+export enum TimeFormat {
+  /** The convention of the user's language, e.g. "4:15 PM" or "16:15". */
+  Locale = "locale",
+  /** The 24-hour clock, e.g. "16:15". */
+  TwentyFourHour = "24h",
+  /** The 12-hour clock with a day period, e.g. "4:15 PM". */
+  TwelveHour = "12h",
+}
+
 /** Workspace-level preferences. */
 export enum TeamPreference {
   /** Whether documents have a separate edit mode instead of always editing. */
@@ -79,6 +103,10 @@ export enum TeamPreference {
   DefaultShareExpiryDays = "defaultShareExpiryDays",
   /** How text with inline comments is highlighted in documents by default. */
   CommentMarkStyle = "commentMarkStyle",
+  /** How absolute dates are written out by default. */
+  DateFormat = "dateFormat",
+  /** How times of day are written out by default. */
+  TimeFormat = "timeFormat",
 }
 
 /** Workspace preference values, keyed by preference. */
@@ -100,4 +128,6 @@ export type TeamPreferences = {
   [TeamPreference.PersonalDocs]?: boolean;
   [TeamPreference.DefaultShareExpiryDays]?: number;
   [TeamPreference.CommentMarkStyle]?: CommentMarkStyle;
+  [TeamPreference.DateFormat]?: DateFormat;
+  [TeamPreference.TimeFormat]?: TimeFormat;
 };

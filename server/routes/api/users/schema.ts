@@ -1,9 +1,11 @@
 import { z } from "zod";
 import {
   CommentMarkStyle,
+  DateFormat,
   NotificationBadgeType,
   NotificationEventType,
   SidebarSection,
+  TimeFormat,
   UserPreference,
   UserRole,
 } from "@shared/types";
@@ -131,6 +133,8 @@ export const UsersUpdateSchema = BaseSchema.extend({
         [UserPreference.NotificationBadge]: z.enum(NotificationBadgeType),
         [UserPreference.SidebarSectionOrder]: z.array(z.enum(SidebarSection)),
         [UserPreference.CommentMarkStyle]: z.enum(CommentMarkStyle),
+        [UserPreference.DateFormat]: z.enum(DateFormat),
+        [UserPreference.TimeFormat]: z.enum(TimeFormat),
       })
       .partial()
       .optional(),

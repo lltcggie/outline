@@ -1,13 +1,9 @@
-import {
-  getCurrentDateAsString,
-  getCurrentDateTimeAsString,
-  getCurrentTimeAsString,
-  unicodeCLDRtoBCP47,
-} from "./date";
+import type { DateTimeFormatter } from "./DateTimeFormatter";
 
-interface User {
+/** The parts of a user that template variables are replaced from. */
+export interface TemplateVariablesUser {
   name: string;
-  language: string | null;
+  dateTimeFormatter: DateTimeFormatter;
 }
 
 export class TextHelper {
@@ -15,18 +11,17 @@ export class TextHelper {
    * Replaces template variables with the current date, time, and author name.
    *
    * @param text the text to replace the variables in.
-   * @param user the user to get the author name and language from.
+   * @param user the user to get the author name and date format from.
    * @returns the text with the variables replaced.
    */
-  static replaceTemplateVariables(text: string, user: User) {
-    const locales = user.language
-      ? unicodeCLDRtoBCP47(user.language)
-      : undefined;
+  static replaceTemplateVariables(text: string, user: TemplateVariablesUser) {
+    const { dateTimeFormatter } = user;
+    const now = new Date();
 
     return text
-      .replace(/{date}/g, getCurrentDateAsString(locales))
-      .replace(/{time}/g, getCurrentTimeAsString(locales))
-      .replace(/{datetime}/g, getCurrentDateTimeAsString(locales))
+      .replace(/{date}/g, dateTimeFormatter.formatDate(now))
+      .replace(/{time}/g, dateTimeFormatter.formatTime(now))
+      .replace(/{datetime}/g, dateTimeFormatter.formatDateTime(now))
       .replace(/{author}/g, () => user.name);
   }
 

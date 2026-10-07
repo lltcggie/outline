@@ -8,6 +8,7 @@ import type {
   FindOptions,
   InferAttributes,
   InferCreationAttributes,
+  NonAttribute,
 } from "sequelize";
 import { QueryTypes, Op } from "sequelize";
 import { type InstanceUpdateOptions } from "sequelize";
@@ -44,11 +45,13 @@ import {
   UserRole,
   DocumentPermission,
 } from "@shared/types";
+import { DateTimeFormatter } from "@shared/utils/DateTimeFormatter";
 import { UserRoleHelper } from "@shared/utils/UserRoleHelper";
 import { stringToColor } from "@shared/utils/color";
 import type { locales } from "@shared/utils/date";
 import { UserValidation } from "@shared/validations";
 import env from "@server/env";
+import Logger from "@server/logging/Logger";
 import DeleteAttachmentTask from "@server/queues/tasks/DeleteAttachmentTask";
 import { LockHelper } from "@server/storage/LockHelper";
 import { afterCommit } from "@server/storage/transaction";
@@ -309,6 +312,41 @@ class User extends ParanoidModel<
    */
   get isGuest() {
     return this.role === UserRole.Guest;
+  }
+
+  /**
+   * Writes out absolute dates and times the way this user has chosen to see
+   * them, in the user's language. The format comes from the user's preference,
+   * else the team default, so the user should be loaded with the `team`
+   * association included. The formatter is kept until one of its inputs
+   * changes, so that repeated reads share its Intl cache.
+   */
+  get dateTimeFormatter(): DateTimeFormatter {
+    const teamPreferences = this.team?.preferences;
+    const key = JSON.stringify([
+      this.language,
+      this.timezone,
+      this.preferences?.dateFormat,
+      this.preferences?.timeFormat,
+      teamPreferences?.dateFormat,
+      teamPreferences?.timeFormat,
+    ]);
+
+    const cached = this.cachedDateTimeFormatter;
+    if (cached && cached.key === key) {
+      return cached.formatter;
+    }
+
+    if (!this.team) {
+      Logger.warn(
+        "Formatting dates for a user loaded without their team, the workspace default date and time format is ignored",
+        { userId: this.id }
+      );
+    }
+
+    const formatter = DateTimeFormatter.fromPreferences(this, teamPreferences);
+    this.cachedDateTimeFormatter = { key, formatter };
+    return formatter;
   }
 
   get color() {
@@ -1040,6 +1078,11 @@ class User extends ParanoidModel<
       suspended: parseInt(counts.suspendedCount),
     };
   };
+
+  /** The last formatter built by `dateTimeFormatter` and the inputs it was built from. */
+  private cachedDateTimeFormatter:
+    | NonAttribute<{ key: string; formatter: DateTimeFormatter }>
+    | undefined;
 }
 
 export default User;

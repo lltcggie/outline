@@ -12,8 +12,10 @@ import { buildDarkTheme, buildLightTheme } from "@shared/styles/theme";
 import type { CustomTheme, TeamPreferences } from "@shared/types";
 import {
   CommentMarkStyle,
+  DateFormat,
   TOCPosition,
   TeamPreference,
+  TimeFormat,
   UserPreference,
 } from "@shared/types";
 import { getBaseDomain } from "@shared/utils/domains";
@@ -32,6 +34,7 @@ import Text from "~/components/Text";
 import useCommentMarkStyleOptions from "~/hooks/useCommentMarkStyleOptions";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
 import useCurrentUser from "~/hooks/useCurrentUser";
+import useDateTimeFormatOptions from "~/hooks/useDateTimeFormatOptions";
 import usePolicy from "~/hooks/usePolicy";
 import useStores from "~/hooks/useStores";
 import type Team from "~/models/Team";
@@ -260,6 +263,20 @@ function Details() {
     [savePreference]
   );
 
+  const { dateFormatOptions, timeFormatOptions } = useDateTimeFormatOptions();
+
+  const handleDateFormatChange = React.useCallback(
+    (value: string) =>
+      savePreference(TeamPreference.DateFormat, value as DateFormat),
+    [savePreference]
+  );
+
+  const handleTimeFormatChange = React.useCallback(
+    (value: string) =>
+      savePreference(TeamPreference.TimeFormat, value as TimeFormat),
+    [savePreference]
+  );
+
   const handleSelectCollection = React.useCallback(
     (value: string) =>
       saveData({ defaultCollectionId: value === "home" ? null : value }),
@@ -441,6 +458,42 @@ function Details() {
                 }
                 onChange={handleCommentMarkStyleChange}
                 label={t("Comment highlight")}
+                labelHidden
+              />
+            </SettingRow>
+            <SettingRow
+              label={t("Date format")}
+              name={TeamPreference.DateFormat}
+              description={t(
+                "How dates are written out by default, for example in document history. This setting can be overridden by user preferences."
+              )}
+            >
+              <InputSelect
+                options={dateFormatOptions}
+                value={
+                  team.getPreference(TeamPreference.DateFormat) ||
+                  DateFormat.Locale
+                }
+                onChange={handleDateFormatChange}
+                label={t("Date format")}
+                labelHidden
+              />
+            </SettingRow>
+            <SettingRow
+              label={t("Time format")}
+              name={TeamPreference.TimeFormat}
+              description={t(
+                "Whether times use the 12-hour or 24-hour clock by default. This setting can be overridden by user preferences."
+              )}
+            >
+              <InputSelect
+                options={timeFormatOptions}
+                value={
+                  team.getPreference(TeamPreference.TimeFormat) ||
+                  TimeFormat.Locale
+                }
+                onChange={handleTimeFormatChange}
+                label={t("Time format")}
                 labelHidden
               />
             </SettingRow>

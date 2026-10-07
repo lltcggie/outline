@@ -1,6 +1,13 @@
 import { faker } from "@faker-js/faker";
 import { errToString } from "@shared/utils/error";
-import { CollectionPermission, UserRole } from "@shared/types";
+import {
+  CollectionPermission,
+  DateFormat,
+  TeamPreference,
+  TimeFormat,
+  UserPreference,
+  UserRole,
+} from "@shared/types";
 import { createContext } from "@server/context";
 import { Event } from "@server/models";
 import { sequelize } from "@server/storage/database";
@@ -182,6 +189,37 @@ describe("user model", () => {
     it("should set JWT secret", async () => {
       const user = await buildUser();
       expect(user.getSessionToken()).toBeTruthy();
+    });
+  });
+
+  describe("dateTimeFormatter", () => {
+    it("should prefer the user's format over the team default", async () => {
+      const team = await buildTeam({
+        preferences: {
+          [TeamPreference.DateFormat]: DateFormat.DayMonthYear,
+          [TeamPreference.TimeFormat]: TimeFormat.TwentyFourHour,
+        },
+      });
+      const user = await buildUser({
+        teamId: team.id,
+        preferences: { [UserPreference.DateFormat]: DateFormat.ISO },
+      });
+
+      expect(user.dateTimeFormatter.dateFormat).toBe(DateFormat.ISO);
+      expect(user.dateTimeFormatter.timeFormat).toBe(TimeFormat.TwentyFourHour);
+    });
+
+    it("should reuse the formatter until the format changes", async () => {
+      const user = await buildUser();
+      const formatter = user.dateTimeFormatter;
+
+      expect(user.dateTimeFormatter).toBe(formatter);
+
+      user.setPreference(UserPreference.DateFormat, DateFormat.ISO);
+
+      expect(user.dateTimeFormatter).not.toBe(formatter);
+      expect(user.dateTimeFormatter.dateFormat).toBe(DateFormat.ISO);
+      expect(user.dateTimeFormatter).toBe(user.dateTimeFormatter);
     });
   });
 

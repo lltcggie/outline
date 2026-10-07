@@ -1,4 +1,3 @@
-import { format as formatDate } from "date-fns";
 import { CloseIcon } from "outline-icons";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
@@ -14,6 +13,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "~/components/primitives/Popover";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import useUserLocale from "~/hooks/useUserLocale";
 
 type Props = {
@@ -43,6 +43,7 @@ const ExpiryDatePicker = ({
 
   const userLocale = useUserLocale();
   const locale = dateLocale(userLocale);
+  const formatter = useDateTimeFormatter();
   const PickerButton = small ? SmallPickerButton : LargePickerButton;
   const clearSize = small ? 18 : 24;
 
@@ -60,7 +61,7 @@ const ExpiryDatePicker = ({
         <PopoverTrigger>
           <PickerButton neutral>
             {selectedDate
-              ? formatDate(selectedDate, "MMM dd, yyyy", { locale })
+              ? formatter.formatDate(selectedDate)
               : (placeholder ?? t("Choose a date"))}
           </PickerButton>
         </PopoverTrigger>
@@ -114,12 +115,13 @@ const ClearButton = styled(NudeButton)`
   transform: translateY(-50%);
 `;
 
+// The width of a date depends on the format the user has chosen.
 const LargePickerButton = styled(Button)`
-  width: 150px;
+  min-width: 150px;
 `;
 
 const SmallPickerButton = styled(ButtonSmall)`
-  width: 130px;
+  min-width: 130px;
 `;
 
 export default ExpiryDatePicker;

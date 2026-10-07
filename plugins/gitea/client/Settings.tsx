@@ -96,7 +96,7 @@ function Gitea() {
                           <Time
                             dateTime={integration.createdAt}
                             relative={false}
-                            format={{ en_US: "MMMM d, y" }}
+                            time={false}
                           />
                         </>
                       ) : (

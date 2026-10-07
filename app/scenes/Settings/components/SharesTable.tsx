@@ -1,10 +1,8 @@
-import { format as formatDate } from "date-fns";
 import { compact } from "es-toolkit/compat";
 import { observer } from "mobx-react";
 import * as React from "react";
 import { useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { dateLocale } from "@shared/utils/date";
 import type Share from "~/models/Share";
 import Badge from "~/components/Badge";
 import { HEADER_HEIGHT } from "~/components/Header";
@@ -16,13 +14,13 @@ import { type Column as TableColumn } from "~/components/Table";
 import Text from "~/components/Text";
 import { UserLabel } from "~/components/UserLabel";
 import { ContextMenu } from "~/components/Menu/ContextMenu";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import { ActionContextProvider } from "~/hooks/useActionContext";
 import { useShareMenuActions } from "~/hooks/useShareMenuActions";
 import Time from "~/components/Time";
 import ShareMenu from "~/menus/ShareMenu";
 import { useFormatNumber } from "~/hooks/useFormatNumber";
 import useStores from "~/hooks/useStores";
-import useUserLocale from "~/hooks/useUserLocale";
 import ShareSelectionToolbar from "./ShareSelectionToolbar";
 
 const ROW_HEIGHT = 50;
@@ -54,7 +52,7 @@ export function SharesTable({ data, canManage, ...rest }: Props) {
   const { t } = useTranslation();
   const formatNumber = useFormatNumber();
   const { policies } = useStores();
-  const userLocale = useUserLocale();
+  const formatter = useDateTimeFormatter();
   const hasDomain = data.some((share) => share.domain);
 
   const isRowSelectable = useCallback(
@@ -135,9 +133,7 @@ export function SharesTable({ data, canManage, ...rest }: Props) {
             ) : (
               <Text type="tertiary">
                 <Time dateTime={share.expiresAt}>
-                  {formatDate(Date.parse(share.expiresAt), "MMM dd, yyyy", {
-                    locale: dateLocale(userLocale),
-                  })}
+                  {formatter.formatDate(new Date(share.expiresAt))}
                 </Time>
               </Text>
             ),
@@ -171,7 +167,7 @@ export function SharesTable({ data, canManage, ...rest }: Props) {
             }
           : undefined,
       ]),
-    [t, userLocale, hasDomain, canManage, formatNumber]
+    [t, formatter, hasDomain, canManage, formatNumber]
   );
 
   return (
