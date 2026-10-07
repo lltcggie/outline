@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   CommentingAccess,
+  CommentMarkStyle,
   EmailDisplay,
   TeamPreference,
   TOCPosition,
@@ -77,6 +78,8 @@ export const TeamsUpdateSchema = BaseSchema.extend({
         [TeamPreference.MCP]: z.boolean(),
         /** List of disabled embed provider titles. */
         [TeamPreference.DisabledEmbeds]: z.array(z.string()),
+        /** How text with inline comments is highlighted in documents by default. */
+        [TeamPreference.CommentMarkStyle]: z.enum(CommentMarkStyle),
       })
       .partial()
       .optional(),

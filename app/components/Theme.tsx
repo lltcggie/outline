@@ -19,7 +19,8 @@ const Theme: React.FC<Props> = ({ children }: Props) => {
   const theme = useBuildTheme(
     auth.team?.getPreference(TeamPreference.CustomTheme) ||
       auth.config?.customTheme ||
-      undefined
+      undefined,
+    { commentMarkStyle: auth.user?.commentMarkStyle }
   );
   const direction = isRTLLanguage(i18n.language) ? "rtl" : "ltr";
 

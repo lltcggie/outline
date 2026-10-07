@@ -3,6 +3,7 @@ import { computed, action, observable } from "mobx";
 import { now } from "mobx-utils";
 import { UserPreferenceDefaults } from "@shared/constants";
 import {
+  CommentMarkStyle,
   NotificationEventDefaults,
   type NotificationEventType,
   TeamPreference,
@@ -205,6 +206,22 @@ class User extends ParanoidModel implements Searchable {
       this.store.rootStore.auth?.team?.getPreference(
         TeamPreference.SeamlessEdit
       )
+    );
+  }
+
+  /**
+   * Returns how text with inline comments is highlighted for this user, using
+   * the user's preference, else the team default.
+   *
+   * @returns The comment mark style
+   */
+  @computed
+  get commentMarkStyle(): CommentMarkStyle {
+    return this.getPreference(
+      UserPreference.CommentMarkStyle,
+      this.store.rootStore.auth?.team?.getPreference(
+        TeamPreference.CommentMarkStyle
+      ) || CommentMarkStyle.Underline
     );
   }
 

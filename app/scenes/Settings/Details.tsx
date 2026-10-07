@@ -10,7 +10,7 @@ import { ThemeProvider } from "styled-components";
 import { errToString } from "@shared/utils/error";
 import { buildDarkTheme, buildLightTheme } from "@shared/styles/theme";
 import type { CustomTheme } from "@shared/types";
-import { TOCPosition, TeamPreference } from "@shared/types";
+import { CommentMarkStyle, TOCPosition, TeamPreference } from "@shared/types";
 import { getBaseDomain } from "@shared/utils/domains";
 import { TeamValidation } from "@shared/validations";
 import Button from "~/components/Button";
@@ -24,6 +24,7 @@ import { InputSelect } from "~/components/InputSelect";
 import Scene from "~/components/Scene";
 import Switch from "~/components/Switch";
 import Text from "~/components/Text";
+import useCommentMarkStyleOptions from "~/hooks/useCommentMarkStyleOptions";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
 import usePolicy from "~/hooks/usePolicy";
 import useStores from "~/hooks/useStores";
@@ -89,6 +90,17 @@ function Details() {
     setTocPosition(position as TOCPosition);
   }, []);
 
+  const [commentMarkStyle, setCommentMarkStyle] = useState(
+    team.getPreference(TeamPreference.CommentMarkStyle) ||
+      CommentMarkStyle.Underline
+  );
+
+  const commentMarkStyleOptions = useCommentMarkStyleOptions();
+
+  const handleCommentMarkStyleChange = React.useCallback((style: string) => {
+    setCommentMarkStyle(style as CommentMarkStyle);
+  }, []);
+
   const handleSubmit = React.useCallback(
     async (event?: React.SyntheticEvent) => {
       if (event) {
@@ -106,6 +118,7 @@ function Details() {
             publicBranding,
             customTheme,
             tocPosition,
+            commentMarkStyle,
           },
         });
         toast.success(t("Settings saved"));
@@ -115,6 +128,7 @@ function Details() {
     },
     [
       tocPosition,
+      commentMarkStyle,
       team,
       name,
       description,
@@ -296,7 +310,6 @@ function Details() {
             </SettingRow>
           )}
           <SettingRow
-            border={false}
             label={t("Table of contents position")}
             name="tocPosition"
             description={t(
@@ -308,6 +321,22 @@ function Details() {
               value={tocPosition}
               onChange={handleTocPositionChange}
               label={t("Table of contents position")}
+              labelHidden
+            />
+          </SettingRow>
+          <SettingRow
+            border={false}
+            label={t("Comment highlight")}
+            name={TeamPreference.CommentMarkStyle}
+            description={t(
+              "How text with inline comments is highlighted in documents by default. This setting can be overridden by user preferences."
+            )}
+          >
+            <InputSelect
+              options={commentMarkStyleOptions}
+              value={commentMarkStyle}
+              onChange={handleCommentMarkStyleChange}
+              label={t("Comment highlight")}
               labelHidden
             />
           </SettingRow>

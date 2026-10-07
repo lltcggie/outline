@@ -2,7 +2,7 @@
 import type { PluginSimple } from "markdown-it";
 import { observable } from "mobx";
 import { Observer } from "mobx-react";
-import { darken, transparentize } from "polished";
+import { darken } from "polished";
 import { baseKeymap } from "prosemirror-commands";
 import { dropCursor } from "prosemirror-dropcursor";
 import { gapCursor } from "prosemirror-gapcursor";
@@ -31,7 +31,9 @@ import styled, { css } from "styled-components";
 import type { CommentAnchor } from "@shared/editor/commands/comment";
 import insertFiles from "@shared/editor/commands/insertFiles";
 import { draftCommentAnchorPluginKey } from "@shared/editor/plugins/DraftCommentAnchorPlugin";
-import Styles from "@shared/editor/components/Styles";
+import Styles, {
+  commentMarkDecoration,
+} from "@shared/editor/components/Styles";
 import type { EmbedDescriptor } from "@shared/editor/embeds";
 import type { CommandFactory, WidgetProps } from "@shared/editor/lib/Extension";
 import type { AnyExtension, AnyExtensionClass } from "@shared/editor/lib/types";
@@ -1130,8 +1132,8 @@ const EditorContainer = styled(Styles)<{
     props.focusedCommentId &&
     css`
       span#comment-${props.focusedCommentId} {
-        background: ${transparentize(0.5, props.theme.brand.marine)};
-        text-decoration: underline 2px ${props.theme.commentMarkBackground};
+        ${commentMarkDecoration(props.theme)}
+        background: ${props.theme.commentMarkActiveBackground};
 
         * {
           background: transparent !important;
@@ -1149,7 +1151,7 @@ const EditorContainer = styled(Styles)<{
     props.hoveredCommentId !== props.focusedCommentId &&
     css`
       span#comment-${props.hoveredCommentId} {
-        background: ${props.theme.commentMarkBackground};
+        background: ${props.theme.commentMarkHoverBackground};
 
         * {
           background: transparent !important;

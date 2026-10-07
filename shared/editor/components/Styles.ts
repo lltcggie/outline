@@ -4,6 +4,7 @@ import type { DefaultTheme } from "styled-components";
 import styled, { css, keyframes } from "styled-components";
 import { HEADER_HEIGHT } from "../../constants";
 import { breakpoints, hover } from "../../styles";
+import { CommentMarkStyle } from "../../types";
 import { EditorStyleHelper } from "../styles/EditorStyleHelper";
 import { videoStyle } from "./Video";
 
@@ -44,6 +45,66 @@ const codeMarkCursor = () => css`
     animation: ProseMirror-cursor-blink 1.1s steps(2, start) infinite;
     position: relative;
     z-index: 1;
+  }
+`;
+
+/**
+ * The decoration drawn on an inline comment mark for the theme's comment mark
+ * style, as a CSS declaration block body.
+ *
+ * @param theme The current theme
+ * @returns CSS declarations for the comment mark decoration
+ */
+export const commentMarkDecoration = (theme: DefaultTheme) =>
+  theme.commentMarkStyle === CommentMarkStyle.Highlight
+    ? `
+    background: ${theme.commentMarkHighlightBackground};
+    border-bottom: 2px solid ${theme.commentMarkHighlightBorder};
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    `
+    : `
+    text-decoration: underline 2px ${theme.commentMarkBackground};
+    `;
+
+/**
+ * Styles for inline comment marks that are active (unresolved, or a draft
+ * belonging to the current user) while commenting is enabled.
+ */
+const commentMarkStyle = (props: Props) => `
+  &:not([data-resolved]):not([data-draft]), &[data-draft][data-user-id="${
+    props.userId ?? ""
+  }"]  {
+    ${commentMarkDecoration(props.theme)}
+    transition: background 100ms ease-in-out;
+
+    ${
+      props.theme.commentMarkStyle === CommentMarkStyle.Highlight
+        ? `
+    /* Overlapping comments nest their marks; paint the highlight once rather
+       than stacking the translucent dark-theme color. Kept without !important
+       so the focused comment's own background still shows. */
+    .${EditorStyleHelper.comment} {
+      background: transparent;
+    }
+    `
+        : ""
+    }
+
+    &:hover {
+      ${props.readOnly ? "cursor: var(--pointer);" : ""}
+      background: ${props.theme.commentMarkHoverBackground};
+
+      * {
+        background: transparent !important;
+      }
+    }
+
+    @media print {
+      background: none;
+      border-bottom: 0;
+      text-decoration: none;
+    }
   }
 `;
 
@@ -1268,21 +1329,7 @@ ${
   props.commenting
     ? `
 .${EditorStyleHelper.comment} {
-  &:not([data-resolved]):not([data-draft]), &[data-draft][data-user-id="${
-    props.userId ?? ""
-  }"]  {
-    text-decoration: underline 2px ${props.theme.commentMarkBackground};
-    transition: background 100ms ease-in-out;
-
-    &:hover {
-      ${props.readOnly ? "cursor: var(--pointer);" : ""}
-      background: ${props.theme.commentMarkBackground};
-
-      * {
-        background: transparent !important;
-      }
-    }
-  }
+  ${commentMarkStyle(props)}
 }
 `
     : `

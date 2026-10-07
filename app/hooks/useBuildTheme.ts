@@ -5,6 +5,7 @@ import {
   buildLightTheme,
   buildPitchBlackTheme,
 } from "@shared/styles/theme";
+import type { ThemeOptions } from "@shared/styles/theme";
 import type { CustomTheme } from "@shared/types";
 import { Theme } from "~/stores/UiStore";
 import useMediaQuery from "~/hooks/useMediaQuery";
@@ -16,11 +17,13 @@ import useQuery from "./useQuery";
  * and the custom theme provided.
  *
  * @param customTheme Custom theme to merge with the default theme
+ * @param options Optional theme options, such as the comment mark style
  * @param overrideTheme Optional override the theme to use
  * @returns The theme to use
  */
 export default function useBuildTheme(
   customTheme: Partial<CustomTheme> = {},
+  { commentMarkStyle }: ThemeOptions = {},
   overrideTheme?: Theme
 ) {
   const { ui } = useStores();
@@ -41,19 +44,19 @@ export default function useBuildTheme(
 
   const resolvedTheme = overrideTheme ?? ui.resolvedTheme;
 
-  const theme = useMemo(
-    () =>
-      isPrinting
-        ? buildLightTheme(customTheme)
-        : isMobile
-          ? resolvedTheme === "dark"
-            ? buildPitchBlackTheme(customTheme)
-            : buildLightTheme(customTheme)
-          : resolvedTheme === "dark"
-            ? buildDarkTheme(customTheme)
-            : buildLightTheme(customTheme),
-    [customTheme, isMobile, isPrinting, resolvedTheme]
-  );
+  const theme = useMemo(() => {
+    const options = { commentMarkStyle };
+
+    return isPrinting
+      ? buildLightTheme(customTheme, options)
+      : isMobile
+        ? resolvedTheme === "dark"
+          ? buildPitchBlackTheme(customTheme, options)
+          : buildLightTheme(customTheme, options)
+        : resolvedTheme === "dark"
+          ? buildDarkTheme(customTheme, options)
+          : buildLightTheme(customTheme, options);
+  }, [customTheme, isMobile, isPrinting, resolvedTheme, commentMarkStyle]);
 
   return theme;
 }

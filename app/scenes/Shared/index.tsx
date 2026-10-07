@@ -135,7 +135,9 @@ function SharedScene() {
   const activePage = useActivePage(share);
 
   const team = share?.team;
-  const theme = useBuildTheme(team?.customTheme);
+  const theme = useBuildTheme(team?.customTheme, {
+    commentMarkStyle: user?.commentMarkStyle,
+  });
 
   const pageTitle =
     model instanceof Collection

@@ -406,6 +406,15 @@ export enum UserPreference {
   NotificationBadge = "notificationBadge",
   /** The display order of the reorderable sections in the sidebar. */
   SidebarSectionOrder = "sidebarSectionOrder",
+  /** How text with inline comments is highlighted in documents. */
+  CommentMarkStyle = "commentMarkStyle",
+}
+
+export enum CommentMarkStyle {
+  /** A thin underline below the text, filled in on hover. */
+  Underline = "underline",
+  /** A filled background behind the text with a bottom border. */
+  Highlight = "highlight",
 }
 
 export enum HeadingPrefixStyle {
@@ -449,6 +458,7 @@ export type UserPreferences = {
   [UserPreference.ShowDocumentStats]?: boolean;
   [UserPreference.NotificationBadge]?: NotificationBadgeType;
   [UserPreference.SidebarSectionOrder]?: SidebarSection[];
+  [UserPreference.CommentMarkStyle]?: CommentMarkStyle;
 };
 
 export type SourceMetadata = {
@@ -533,6 +543,8 @@ export enum TeamPreference {
   MCP = "mcp",
   /** List of disabled embed provider titles. */
   DisabledEmbeds = "disabledEmbeds",
+  /** How text with inline comments is highlighted in documents by default. */
+  CommentMarkStyle = "commentMarkStyle",
 }
 
 export type TeamPreferences = {
@@ -550,6 +562,7 @@ export type TeamPreferences = {
   [TeamPreference.EmailDisplay]?: EmailDisplay;
   [TeamPreference.MCP]?: boolean;
   [TeamPreference.DisabledEmbeds]?: string[];
+  [TeamPreference.CommentMarkStyle]?: CommentMarkStyle;
 };
 
 export enum NavigationNodeType {
