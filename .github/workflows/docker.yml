@@ -1,17 +1,52 @@
 name: Publish build
 
+# Fork: only this fork's own tags trigger a publish, so upstream tags can never
+# start a build even if they are pushed by mistake. The "-custom" marker is
+# only part of the git tag, the image tags are the plain version. See
+# docs/FORK.md.
+#   vX.Y.Z-custom    release    -> X.Y.Z, X.Y, latest
+#   vX.Y.Z-custom.N  prerelease -> X.Y.Z-N only
 on:
   push:
     tags:
-      - "v*"
+      - "v*-custom"
+      - "v*-custom.*"
   workflow_dispatch:
 
 jobs:
+  tags:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.tags.outputs.tags }}
+    steps:
+      - name: Derive image tags from the git tag
+        id: tags
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$REF_TYPE" == "tag" && "$REF_NAME" =~ ^v([0-9]+\.[0-9]+)\.[0-9]+-custom$ ]]; then
+            version="${REF_NAME#v}"
+            version="${version%-custom}"
+            tags=$(printf 'type=raw,value=%s\ntype=raw,value=%s\ntype=raw,value=latest' \
+              "$version" "${BASH_REMATCH[1]}")
+          elif [[ "$REF_TYPE" == "tag" && "$REF_NAME" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-custom\.([0-9]+)$ ]]; then
+            tags="type=raw,value=${BASH_REMATCH[1]}-${BASH_REMATCH[2]}"
+          else
+            # Manual runs from a branch are tagged with the branch name.
+            tags=$(printf 'type=ref,event=branch\ntype=ref,event=tag')
+          fi
+          {
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: tags
     uses: ./.github/workflows/docker-build.yml
     secrets: inherit
     with:
-      tags: |
-        type=ref,event=branch
-        type=semver,pattern={{version}}
-        type=semver,pattern={{major}}.{{minor}}
+      flavor: |
+        latest=false
+      tags: ${{ needs.tags.outputs.tags }}

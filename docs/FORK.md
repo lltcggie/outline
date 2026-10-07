@@ -249,3 +249,68 @@ outline-search-pgroonga のコンパイル済みプラグインをマウント�
 - 検索プロバイダーの `indexedByDatabase`（`server/utils/BaseSearchProvider.ts`、このフォークで追加）が true のプロバイダーでは、`SearchIndexProcessor` はイベントを処理しない。標準プロバイダーとそれを継承するPGroongaプロバイダーはDB側でインデックスが更新されるので true。上流が `SearchIndexProcessor` の `SEARCH_PROVIDER === "postgres"` の判定を変えたときは、このフラグに合わせる。
 - プラグインのテストは vitest のプロジェクト `server-pgroonga`（`vitest.config.ts`）で実行する。このプロジェクトはテストDBのサーバーにPGroongaがあるときだけ作られ（無ければその旨の警告が出て、プラグインのテストは実行されない）、`plugins/search-pgroonga/server/globalSetup.ts` がインデックスを作ってからワーカーを起動する。`SEARCH_PROVIDER=pgroonga` で標準プロバイダーのテスト（`plugins/search-postgres/server/PostgresSearchProvider.test.ts`）も実行し、閲覧権限の絞り込み・フィルター・並び順・ページングが標準と同じ期待を満たすことを確かめる。このテストの抜粋の期待値1か所は、両プロバイダーの結果を許す形にしてある。
 - 上流をマージするとき、`plugins/search-postgres/` と `server/utils/BaseSearchProvider.ts` に差分があれば、プラグイン側へ追随させる。`PostgresSearchProvider` の `buildWhere` と `buildTeamWhere`（共有リンクの絞り込みをまとめたもの）はこのフォークで protected にしてプラグインから呼んでおり、上流で名前や引数が変わると `yarn tsc` で止まる。`PGroongaSearchProvider.ts` の `buildRankedOrder` と `buildSnippet` は標準の `buildFindOptions`・`buildResultContext` に対応するので、そちらが変わったら合わせる。`shared/editor/` でノード名や属性（`text`、`mention` の `attrs.type`・`attrs.label`、`br`、`attachment` の `attrs.title`、`image` の `attrs.alt`、`href`）が変わったときは、`pgroongaIndex.ts` の本文抽出関数を直し、インデックス名の版を上げて（`PGROONGA_INDEX_NAME`、旧名は `LEGACY_PGROONGA_INDEX_NAMES` に足す）「インデックス定義の履歴」に書く。
+
+## バージョンタグでDockerイメージをDocker Hubに公開する
+
+### 仕組み
+
+フォーク独自の形式のタグ（後述）を GitHub に push すると、`.github/workflows/docker.yml` が `.github/workflows/docker-build.yml` を呼び、`linux/amd64` と `linux/arm64` のイメージをビルドしてマルチアーキテクチャのマニフェストを Docker Hub に push する。`docker-build.yml` は上流から次の点を変えてある。
+
+- イメージ名は `outlinewiki/outline` 固定ではなく、リポジトリ変数 `DOCKERHUB_IMAGE` があればその値、無ければ `<GitHubのリポジトリオーナー名>/outline`。ベースイメージはそれに `-base` を付けた名前（例 `lltcggie/outline` と `lltcggie/outline-base`）。
+- ランナーは Blacksmith ではなく GitHub ホストの `ubuntu-latest`（amd64）と `ubuntu-24.04-arm`（arm64）。arm64 ランナーは公開リポジトリでのみ無料で使える。
+- ビルドアクションは Blacksmith 製ではなく公式の `docker/setup-buildx-action` と `docker/build-push-action`。レイヤーキャッシュは GitHub Actions キャッシュ（`type=gha`）をプラットフォームとイメージごとに分けて使う。
+
+### タグの形式
+
+このフォークは `package.json` の版番号を上流のまま使っているので、上流と同じ `vX.Y.Z` 形式のタグは使わない。「基にした上流の版 + `-custom`」を使い、`docker.yml` もこの形式のタグだけで起動するようにしてある（上流のタグを誤って push してもビルドは走らない）。
+
+| Git タグ | 意味 | Docker Hub に付くタグ |
+| --- | --- | --- |
+| `v1.10.1-custom` | 上流 1.10.1 を基にした正式版 | `1.10.1`、`1.10`、`latest` |
+| `v1.10.1-custom.1` | 同じ上流版を基にした試験版（`.` の後は連番） | `1.10.1-1` のみ。`latest` は更新されない |
+
+`-custom` は Git タグだけの印で、Docker Hub のタグには付けない（上流のイメージとは名前空間が違うので衝突しない）。イメージタグは `docker/metadata-action` の自動判定ではなく、`docker.yml` の前段ジョブ `tags` がタグ名から計算している。`-custom` で終わるタグだけ `latest` を付ける。同じ上流版で改造を重ねて正式版を出し直す場合は、`v1.10.1-custom` を打ち直すのではなく上流版を上げるか、試験版の連番を使う。`Actions` タブから手動実行（`workflow_dispatch`）した場合はブランチ名のタグになり、`latest` は付かない。
+
+### 初回の設定
+
+1. Docker Hub で Personal Access Token を作る（Account settings → Personal access tokens、権限は Read & Write）。リポジトリ `<名前空間>/outline` と `<名前空間>/outline-base` は初回の push で自動的に作られる（公開リポジトリになる。非公開にしたい場合は先に作っておく）。
+2. GitHub のリポジトリ Settings → Secrets and variables → Actions で、**リポジトリの** Secrets に `DOCKERHUB_USERNAME`（Docker Hub のユーザー名）と `DOCKERHUB_TOKEN`（1のトークン）を登録する。ビルドジョブは環境（environment）の外でログインするので、環境の Secrets ではなくリポジトリの Secrets に入れること。
+3. Docker Hub の名前空間が GitHub のオーナー名と違う場合は、同じ画面の Variables に `DOCKERHUB_IMAGE`（例 `myorg/outline`）を登録する。
+4. マニフェストを push する `merge` ジョブは環境 `dockerhub` を使う。初回の実行時に自動で作られるので、承認者を付けたい場合は Settings → Environments で `dockerhub` に Required reviewers を設定する。
+
+### リリース手順
+
+```bash
+git tag v1.10.1-custom
+git push origin v1.10.1-custom
+```
+
+タグは必ず名前を指定して push する。手元のクローンには upstream から取り込んだ上流のタグが大量にあるため、`git push --tags` を実行すると上流のタグがすべてフォークに push されてしまう。`push.followTags` も有効にしないこと（上流の注釈付きタグが通常の push に同乗する）。上流のタグを手元に取り込みたくない場合は `git config remote.upstream.tagOpt --no-tags` を設定する。
+
+進行状況は Actions タブの「Publish build」で確認する。完了後は `docker pull <名前空間>/outline:1.10.1` で取得できる。
+
+### 注意事項
+
+- 上流をマージするとき、`docker.yml` は起動条件とタグ規則をこちらの版で保つ。`docker-build.yml` の差分はランナー名・ビルドアクション・イメージ名の3点をこちらの版で保つ。上流が Blacksmith 側のアクションの新機能を使い始めたら、公式アクションの同等機能に読み替える。
+- GitHub ホストのランナー（4コア・16GB）でのビルドは Blacksmith より時間がかかる。メモリ不足で `yarn build` が落ちる場合は `Dockerfile.base` の `NODE_OPTIONS` を下げるか、より大きいランナーに替える。
+
+## `.github` のワークフローの取捨選択
+
+フォークで使うワークフローは次の3本だけ。それ以外の上流のワークフローと bot 用の設定は削除してある。
+
+| ファイル | 用途 |
+| --- | --- |
+| `.github/workflows/docker.yml` | 改造版のタグでDockerイメージを公開する（前節） |
+| `.github/workflows/docker-build.yml` | 上記から呼ばれるビルド本体 |
+| `.github/workflows/ci.yml` | リント・型チェック・テスト。上流は `main` への push で動かすが、フォークでは `main-custom` への push と PR で動くように起動条件を変えてある。`.github/actions/install` はこのワークフローが使う共通処理 |
+
+削除したもの（上流の運用専用で、フォークでは不要か害になるもの）:
+
+- `docker-nightly.yml`: 上流の `main` を毎晩ビルドする。フォークに `main` は無い。
+- `close-translation-prs.yml`: 翻訳ファイルだけを触る PR を自動で閉じる。フォークで `ja_JP` を直す PR が閉じられてしまう。
+- `auto-close-prs.yml`・`stale.yml`: CLA 未署名や放置された PR を閉じる上流のポリシー。
+- `update-node.yml`: Node 更新の PR を自動で作る。
+- `calibreapp-image-actions.yml`・`codeql-analysis.yml`: 画像圧縮とコードスキャン。`outline/outline` 向け。
+- `dependabot.yml`・`FUNDING.yml`: 依存更新 PR の自動作成と、上流へのスポンサーボタン。
+
+上流をマージするとき、上流がこれらのファイルを変更していると「片方は削除、片方は変更」の衝突になる。削除を維持する（`git rm` で解消する）。上流が新しいワークフローを足してきた場合は、フォークで必要かをこの表の基準で判断し、不要なら削除してここに追記する。`ci.yml` の起動ブランチは `main-custom` のままにする。
