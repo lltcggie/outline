@@ -1,4 +1,5 @@
 import { faker } from "@faker-js/faker";
+import { DateFormat, TeamPreference, TimeFormat } from "@shared/types";
 import { TeamDomain } from "@server/models";
 import {
   buildAdmin,
@@ -65,6 +66,32 @@ describe("#team.update", () => {
     const body = await res.json();
     expect(res.status).toEqual(200);
     expect(body.data.preferences.publicBranding).toBe(true);
+  });
+
+  it("should update the default date and time format", async () => {
+    const admin = await buildAdmin();
+    const res = await server.post("/api/team.update", admin, {
+      body: {
+        preferences: {
+          [TeamPreference.DateFormat]: DateFormat.YearMonthDay,
+          [TeamPreference.TimeFormat]: TimeFormat.TwelveHour,
+        },
+      },
+    });
+    const body = await res.json();
+    expect(res.status).toEqual(200);
+    expect(body.data.preferences.dateFormat).toBe(DateFormat.YearMonthDay);
+    expect(body.data.preferences.timeFormat).toBe(TimeFormat.TwelveHour);
+  });
+
+  it("should fail upon sending an unknown default time format", async () => {
+    const admin = await buildAdmin();
+    const res = await server.post("/api/team.update", admin, {
+      body: {
+        preferences: { [TeamPreference.TimeFormat]: "48h" },
+      },
+    });
+    expect(res.status).toEqual(400);
   });
 
   it("should fail upon sending unknown team preference", async () => {

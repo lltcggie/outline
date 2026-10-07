@@ -12,11 +12,6 @@ import normalizePastedMarkdown from "@shared/editor/lib/markdown/normalize";
 import { sliceWithoutFirstNode } from "@shared/editor/lib/sliceWithoutFirstNode";
 import { extraArea, s } from "@shared/styles";
 import { light } from "@shared/styles/theme";
-import {
-  getCurrentDateAsString,
-  getCurrentDateTimeAsString,
-  getCurrentTimeAsString,
-} from "@shared/utils/date";
 import { isModKey } from "@shared/utils/keyboard";
 import { DocumentValidation } from "@shared/validations";
 import type { RefHandle } from "~/components/ContentEditable";
@@ -24,6 +19,7 @@ import ContentEditable from "~/components/ContentEditable";
 import { useDocumentContext } from "~/components/DocumentContext";
 import { PopoverButton } from "~/components/IconPicker/components/PopoverButton";
 import useBoolean from "~/hooks/useBoolean";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import usePolicy from "~/hooks/usePolicy";
 import { useTranslation } from "react-i18next";
 import lazyWithRetry from "~/utils/lazyWithRetry";
@@ -75,6 +71,7 @@ const DocumentTitle = React.forwardRef(function DocumentTitle_(
   externalRef: React.RefObject<RefHandle>
 ) {
   const { t } = useTranslation();
+  const formatter = useDateTimeFormatter();
   const ref = React.useRef<RefHandle>(null);
   const [iconPickerIsOpen, handleOpen, setIconPickerClosed] = useBoolean();
   const { editor } = useDocumentContext();
@@ -146,19 +143,19 @@ const DocumentTitle = React.forwardRef(function DocumentTitle_(
       let value = input;
 
       if (/\/date\s$/.test(input)) {
-        value = getCurrentDateAsString();
+        value = formatter.formatDate(new Date());
         ref?.current?.focusAtEnd();
       } else if (input.endsWith("/time")) {
-        value = getCurrentTimeAsString();
+        value = formatter.formatTime(new Date());
         ref?.current?.focusAtEnd();
       } else if (input.endsWith("/datetime")) {
-        value = getCurrentDateTimeAsString();
+        value = formatter.formatDateTime(new Date());
         ref?.current?.focusAtEnd();
       }
 
       onChangeTitle?.(value);
     },
-    [ref, onChangeTitle]
+    [ref, onChangeTitle, formatter]
   );
 
   // Custom paste handling so that if a multiple lines are pasted we

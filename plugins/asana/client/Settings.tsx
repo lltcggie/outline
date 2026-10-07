@@ -98,7 +98,7 @@ function Asana() {
                     <Time
                       dateTime={linkedAccount.createdAt}
                       relative={false}
-                      format={{ en_US: "MMMM d, y" }}
+                      time={false}
                     />
                   </>
                 }

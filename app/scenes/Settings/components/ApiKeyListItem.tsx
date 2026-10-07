@@ -12,7 +12,7 @@ import Time from "~/components/Time";
 import Tooltip from "~/components/Tooltip";
 import { HStack } from "~/components/primitives/HStack";
 import useCurrentUser from "~/hooks/useCurrentUser";
-import useUserLocale from "~/hooks/useUserLocale";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import ApiKeyMenu from "~/menus/ApiKeyMenu";
 import { dateToExpiry } from "~/utils/date";
 
@@ -23,7 +23,7 @@ type Props = {
 
 const ApiKeyListItem = ({ apiKey }: Props) => {
   const { t } = useTranslation();
-  const userLocale = useUserLocale();
+  const formatter = useDateTimeFormatter();
   const user = useCurrentUser();
 
   const creatorText =
@@ -58,7 +58,7 @@ const ApiKeyListItem = ({ apiKey }: Props) => {
           {" "}
           &middot;{" "}
           {apiKey.expiresAt
-            ? dateToExpiry(apiKey.expiresAt, t, userLocale)
+            ? dateToExpiry(apiKey.expiresAt, t, formatter)
             : t("No expiry")}
         </Text>
       )}

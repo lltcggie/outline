@@ -2,8 +2,10 @@ import { z } from "zod";
 import {
   CommentingAccess,
   CommentMarkStyle,
+  DateFormat,
   EmailDisplay,
   TeamPreference,
+  TimeFormat,
   TOCPosition,
   UserRole,
 } from "@shared/types";
@@ -80,6 +82,10 @@ export const TeamsUpdateSchema = BaseSchema.extend({
         [TeamPreference.DisabledEmbeds]: z.array(z.string()),
         /** How text with inline comments is highlighted in documents by default. */
         [TeamPreference.CommentMarkStyle]: z.enum(CommentMarkStyle),
+        /** How absolute dates are written out by default. */
+        [TeamPreference.DateFormat]: z.enum(DateFormat),
+        /** How times of day are written out by default. */
+        [TeamPreference.TimeFormat]: z.enum(TimeFormat),
       })
       .partial()
       .optional(),

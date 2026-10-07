@@ -1,16 +1,14 @@
-import { format as formatDate } from "date-fns";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import styled from "styled-components";
 import Text from "@shared/components/Text";
-import { dateLocale } from "@shared/utils/date";
 import { RevisionHelper } from "@shared/utils/RevisionHelper";
 import type Document from "~/models/Document";
 import type Event from "~/models/Event";
 import Revision from "~/models/Revision";
 import { InputSelect, type Option } from "~/components/InputSelect";
 import Switch from "~/components/Switch";
-import useUserLocale from "~/hooks/useUserLocale";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import { revisionCollaboratorText } from "./utils";
 import { ResizingHeightContainer } from "~/components/ResizingHeightContainer";
 import { ConditionalFade } from "~/components/Fade";
@@ -37,7 +35,7 @@ export function HighlightChangesControl({
   onCompareToChange,
 }: Props) {
   const { t } = useTranslation();
-  const userLocale = useUserLocale();
+  const formatter = useDateTimeFormatter();
   const skipFadeRef = React.useRef(showChanges);
 
   const compareOptions = React.useMemo((): Option[] => {
@@ -45,7 +43,6 @@ export function HighlightChangesControl({
       (item): item is Revision => item instanceof Revision
     );
 
-    const locale = dateLocale(userLocale);
     const resolvedSelectedId =
       selectedRevisionId === "latest" && document
         ? RevisionHelper.latestId(document.id)
@@ -82,9 +79,7 @@ export function HighlightChangesControl({
         lastHeadingYear = revYear;
       }
 
-      const dateLabel = formatDate(revDate, "MMM do, h:mm a", {
-        locale,
-      });
+      const dateLabel = formatter.formatDateTime(revDate, { year: false });
       const collaboratorText = revisionCollaboratorText(rev, t);
 
       options.push({
@@ -96,7 +91,7 @@ export function HighlightChangesControl({
     }
 
     return options;
-  }, [items, selectedRevisionId, document, userLocale, t]);
+  }, [items, selectedRevisionId, document, formatter, t]);
 
   return (
     <Content>

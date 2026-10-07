@@ -1,7 +1,6 @@
-import { format as formatDate } from "date-fns";
 import { useState, useRef, useEffect } from "react";
-import type { locales } from "@shared/utils/date";
 import { dateLocale, dateToRelative } from "@shared/utils/date";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import useUserLocale from "~/hooks/useUserLocale";
 
 let callbacks: (() => void)[] = [];
@@ -24,28 +23,24 @@ export type Props = {
   dateTime: string;
   addSuffix?: boolean;
   shorten?: boolean;
+  /** Whether to display the time relative to now, e.g. "3 minutes ago". Defaults to true. */
   relative?: boolean;
-  format?: Partial<Record<keyof typeof locales, string>>;
+  /** Whether an absolute date includes the year. Defaults to true. */
+  year?: boolean;
+  /** Whether an absolute date includes the time of day. Defaults to true. */
+  time?: boolean;
 };
 
 export const useLocaleTime = ({
   addSuffix,
   dateTime,
   shorten,
-  format,
   relative,
+  year = true,
+  time = true,
 }: Props) => {
   const userLocale = useUserLocale();
-  const dateFormatLong: Record<string, string> = {
-    en_US: "MMMM do, yyyy h:mm a",
-    fr_FR: "'Le 'd MMMM yyyy 'à' H:mm",
-    de_DE: "d. MMMM yyyy 'um' H:mm",
-  };
-  const formatLocaleLong =
-    (userLocale ? dateFormatLong[userLocale] : undefined) ??
-    "MMMM do, yyyy h:mm a";
-  // @ts-expect-error fallback to formatLocaleLong
-  const formatLocale = format?.[userLocale] ?? formatLocaleLong;
+  const formatter = useDateTimeFormatter();
   const [, setMinutesMounted] = useState(0);
   const callback = useRef<() => void>();
 
@@ -68,15 +63,13 @@ export const useLocaleTime = ({
     shorten,
   });
 
-  const tooltipContent = formatDate(date, formatLocaleLong, {
-    locale,
-  });
+  const tooltipContent = formatter.formatDateTime(date);
   const content =
     relative !== false
       ? relativeContent
-      : formatDate(date, formatLocale, {
-          locale,
-        });
+      : time
+        ? formatter.formatDateTime(date, { year })
+        : formatter.formatDate(date, { year });
 
   return {
     content,

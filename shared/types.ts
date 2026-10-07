@@ -408,6 +408,32 @@ export enum UserPreference {
   SidebarSectionOrder = "sidebarSectionOrder",
   /** How text with inline comments is highlighted in documents. */
   CommentMarkStyle = "commentMarkStyle",
+  /** How absolute dates are written out, e.g. in document history. */
+  DateFormat = "dateFormat",
+  /** How times of day are written out, e.g. in document history. */
+  TimeFormat = "timeFormat",
+}
+
+export enum DateFormat {
+  /** The long form of the user's language, e.g. "October 7, 2026". */
+  Locale = "locale",
+  /** Year, month, day separated by hyphens, e.g. "2026-10-07". */
+  ISO = "iso",
+  /** Year, month, day separated by slashes, e.g. "2026/10/07". */
+  YearMonthDay = "yearMonthDay",
+  /** Day, month, year separated by slashes, e.g. "07/10/2026". */
+  DayMonthYear = "dayMonthYear",
+  /** Month, day, year separated by slashes, e.g. "10/07/2026". */
+  MonthDayYear = "monthDayYear",
+}
+
+export enum TimeFormat {
+  /** The convention of the user's language, e.g. "4:15 PM" or "16:15". */
+  Locale = "locale",
+  /** The 24-hour clock, e.g. "16:15". */
+  TwentyFourHour = "24h",
+  /** The 12-hour clock with a day period, e.g. "4:15 PM". */
+  TwelveHour = "12h",
 }
 
 export enum CommentMarkStyle {
@@ -459,6 +485,8 @@ export type UserPreferences = {
   [UserPreference.NotificationBadge]?: NotificationBadgeType;
   [UserPreference.SidebarSectionOrder]?: SidebarSection[];
   [UserPreference.CommentMarkStyle]?: CommentMarkStyle;
+  [UserPreference.DateFormat]?: DateFormat;
+  [UserPreference.TimeFormat]?: TimeFormat;
 };
 
 export type SourceMetadata = {
@@ -545,6 +573,10 @@ export enum TeamPreference {
   DisabledEmbeds = "disabledEmbeds",
   /** How text with inline comments is highlighted in documents by default. */
   CommentMarkStyle = "commentMarkStyle",
+  /** How absolute dates are written out by default. */
+  DateFormat = "dateFormat",
+  /** How times of day are written out by default. */
+  TimeFormat = "timeFormat",
 }
 
 export type TeamPreferences = {
@@ -563,6 +595,8 @@ export type TeamPreferences = {
   [TeamPreference.MCP]?: boolean;
   [TeamPreference.DisabledEmbeds]?: string[];
   [TeamPreference.CommentMarkStyle]?: CommentMarkStyle;
+  [TeamPreference.DateFormat]?: DateFormat;
+  [TeamPreference.TimeFormat]?: TimeFormat;
 };
 
 export enum NavigationNodeType {

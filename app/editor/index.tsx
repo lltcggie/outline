@@ -57,6 +57,7 @@ import type {
 } from "@shared/types";
 import { HeadingPrefixStyle } from "@shared/types";
 import { headingPrefixPluginKey } from "@shared/editor/extensions/HeadingPrefix";
+import type { DateTimeFormatter } from "@shared/utils/DateTimeFormatter";
 import { ProsemirrorHelper } from "@shared/utils/ProsemirrorHelper";
 import EventEmitter from "@shared/utils/events";
 import { getDataTransferFiles } from "@shared/utils/files";
@@ -186,6 +187,11 @@ export type Props = {
   embeds: EmbedDescriptor[];
   /** Display preferences for the logged in user, if any. */
   userPreferences?: UserPreferences | null;
+  /**
+   * Writes out the dates and times inserted by the editor's commands the way
+   * the logged in user has chosen to see them. Defaults to the runtime locale.
+   */
+  dateTimeFormatter?: DateTimeFormatter;
   /** The style of prefix displayed before headings in the document. */
   headingPrefix?: HeadingPrefixStyle;
   /** Whether embeds should be rendered without an iframe */

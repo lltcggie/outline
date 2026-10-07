@@ -136,11 +136,8 @@ const RevisionListItem = ({ item, document, ...rest }: Props) => {
           title={
             <Time
               dateTime={item.createdAt}
-              format={{
-                en_US: "MMM do, h:mm a",
-                fr_FR: "'Le 'd MMMM 'à' H:mm",
-              }}
               relative={false}
+              year={false}
               addSuffix
               onClick={handleTimeClick}
             />

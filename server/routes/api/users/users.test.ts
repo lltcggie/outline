@@ -1,5 +1,11 @@
 import { faker } from "@faker-js/faker";
-import { TeamPreference, UserRole } from "@shared/types";
+import {
+  DateFormat,
+  TeamPreference,
+  TimeFormat,
+  UserPreference,
+  UserRole,
+} from "@shared/types";
 import ConfirmUpdateEmail from "@server/emails/templates/ConfirmUpdateEmail";
 import { TeamDomain } from "@server/models";
 import {
@@ -961,6 +967,32 @@ describe("#users.update", () => {
       body: {
         name: "New name",
         preferences: { rememberLastPath: "invalidValue" },
+      },
+    });
+    expect(res.status).toEqual(400);
+  });
+
+  it("should update the date and time format user preferences", async () => {
+    const user = await buildUser();
+    const res = await server.post("/api/users.update", user, {
+      body: {
+        preferences: {
+          [UserPreference.DateFormat]: DateFormat.ISO,
+          [UserPreference.TimeFormat]: TimeFormat.TwentyFourHour,
+        },
+      },
+    });
+    const body = await res.json();
+    expect(res.status).toEqual(200);
+    expect(body.data.preferences.dateFormat).toEqual(DateFormat.ISO);
+    expect(body.data.preferences.timeFormat).toEqual(TimeFormat.TwentyFourHour);
+  });
+
+  it("should fail upon sending an unknown date format", async () => {
+    const user = await buildUser();
+    const res = await server.post("/api/users.update", user, {
+      body: {
+        preferences: { [UserPreference.DateFormat]: "yyyy-MM-dd" },
       },
     });
     expect(res.status).toEqual(400);

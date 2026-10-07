@@ -1,4 +1,3 @@
-import { format as formatDate } from "date-fns";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import styled from "styled-components";
@@ -10,6 +9,7 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "~/components/primitives/Popover";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import useUserLocale from "~/hooks/useUserLocale";
 
 type Props = {
@@ -23,6 +23,7 @@ const ExpiryDatePicker = ({ selectedDate, onSelect }: Props) => {
 
   const userLocale = useUserLocale();
   const locale = dateLocale(userLocale);
+  const formatter = useDateTimeFormatter();
 
   const handleSelect = React.useCallback(
     (date: Date) => {
@@ -37,7 +38,7 @@ const ExpiryDatePicker = ({ selectedDate, onSelect }: Props) => {
       <PopoverTrigger>
         <StyledPopoverButton neutral>
           {selectedDate
-            ? formatDate(selectedDate, "MMM dd, yyyy", { locale })
+            ? formatter.formatDate(selectedDate)
             : t("Choose a date")}
         </StyledPopoverButton>
       </PopoverTrigger>
@@ -62,7 +63,7 @@ const ExpiryDatePicker = ({ selectedDate, onSelect }: Props) => {
 
 const StyledPopoverButton = styled(Button)`
   margin-top: 12px;
-  width: 150px;
+  min-width: 150px;
 `;
 
 export default ExpiryDatePicker;

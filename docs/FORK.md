@@ -79,6 +79,28 @@ OAuthアプリケーションのスコープ（`read_api read_user`）とコー�
 - 上流をマージするとき、`shared/types.ts`（`CommentMarkStyle`、`UserPreference.CommentMarkStyle`、`TeamPreference.CommentMarkStyle`）、`shared/constants.ts` の `TeamPreferenceDefaults`、`server/routes/api/users/schema.ts`・`server/routes/api/teams/schema.ts` の `preferences` スキーマ（`strictObject` なので、項目が無いと保存時に拒否される）、`shared/styles/theme.ts` と `app/typings/styled-components.d.ts` のテーマ項目、`app/models/User.ts` の `commentMarkStyle`、`app/hooks/useBuildTheme.ts`・`app/components/Theme.tsx`・`app/scenes/Shared/index.tsx`（共有ページのテーマにも渡す）、`shared/editor/components/Styles.ts` の `commentMarkDecoration`、`app/editor/index.tsx` の `EditorContainer`、サイドバー引用の縦線色 `app/scenes/Document/components/Comments/HighlightText.ts`、設定画面（`app/scenes/Settings/Details.tsx`・`Preferences.tsx`、共通の選択肢 `app/hooks/useCommentMarkStyleOptions.ts`）に差分があれば、この機能を保つように解決する。
 - 上流がコメントマークのクラス名（`EditorStyleHelper.comment`）や `data-resolved`・`data-draft`・`data-user-id` 属性を変えたら、`Styles.ts` の `commentMarkStyle` のセレクターを合わせる。
 
+## 日付と時刻の表示形式を設定で切り替える
+
+### 変更の概要
+
+変更履歴の一覧やツールチップなど、絶対日時を表示する箇所の書式を設定で選べるようにした。上流は英語・フランス語・ドイツ語用の date-fns パターンを `app/hooks/useLocaleTime.ts` に固定で持ち、それ以外の言語では英語用のパターンがその言語のロケールで描画されるため、日本語では「10月 7日, 2026 4:15 午後」のような混在表記になっていた。
+
+- ワークスペースの既定値: 設定 → 詳細 → 表示の「Date format」「Time format」。管理者が選び、「保存」で反映される（チーム設定 `dateFormat` / `timeFormat`、既定はどちらも `locale`）。
+- ユーザーごとの上書き: 設定 → 環境設定 → 表示の「Date format」「Time format」。未設定ならワークスペースの既定値に従う（ユーザー設定 `dateFormat` / `timeFormat`）。「Comment highlight」と同じ方式で、一度選ぶとその後ワークスペースの既定値を変えても本人には反映されない。選択肢には現在日時をその形式で描画した例が添えられる。
+- 日付の形式: `locale`（言語の慣習。日本語なら「2026年10月7日」、英語なら「October 7, 2026」）、`iso`（2026-10-07）、`yearMonthDay`（2026/10/07）、`dayMonthYear`（07/10/2026）、`monthDayYear`（10/07/2026）。
+- 時刻の形式: `locale`（言語の慣習）、`24h`（16:15）、`12h`（4:15 PM / 午後4:15）。
+- 描画は `shared/utils/DateTimeFormatter.ts` の `DateTimeFormatter` に集約した。すべて `Intl.DateTimeFormat` で描く。`locale` は言語の長い書式、明示的な日付形式は `en-US` の数値部品（`formatToParts`）を年月日の順序と区切りで並べ直したもので、時刻は `hourCycle` で 12/24 時間を切り替える。変更履歴の一覧のように年を省く箇所は `{ year: false }` を渡す（`locale` なら短い月名、明示形式なら年の部分だけ落ちる）。曜日だけが要る箇所は `formatWeekday`。`Intl.DateTimeFormat` の生成は重いので、インスタンスごとに書式の組み合わせ単位でキャッシュしている。
+- 日付はユーザーの `timezone`（`AuthStore` がブラウザのタイムゾーンと同期している）で描く。サーバー経由のテンプレート作成や Asana の期限でも、サーバープロセスではなくユーザーのタイムゾーンで日付が決まる（上流はサーバーのタイムゾーンだった）。無効なタイムゾーンや言語タグは生成時に一度だけ検証して無視する。
+- 有効な形式の解決（ユーザー設定 → チーム設定 → `TeamPreferenceDefaults`）は `DateTimeFormatter.fromPreferences` の一箇所にある。`User` モデルの `dateTimeFormatter` がこれを呼ぶだけで、クライアント（`app/models/User.ts`。`keepAlive` の computed で、observer でない `Time` コンポーネントからの読み出しでも再計算されない）はログインユーザーのチーム、サーバー（`server/models/User.ts`）は `team` が読み込まれていればそのチームの既定値に従う。コンポーネントからは `app/hooks/useDateTimeFormatter.ts` で取り出し、ログインしていなければ `DateTimeFormatter.default`（実行環境のロケール）になる。
+- 反映される箇所: `<Time relative={false}>` の本文と、すべての `<Time>` のホバーに出る絶対日時（`useLocaleTime.ts`）、変更履歴の「比較対象」ドロップダウン（`HighlightChangesControl.tsx`）、APIキーの有効期限（`app/utils/date.ts` の `dateToExpiry`、`ExpiryDatePicker.tsx`）、各連携の設定画面の接続日、ユーザーのホバーカードの現地時刻（`User.localTime`）、テンプレート変数 `{date}` `{time}` `{datetime}` の置き換え（`shared/utils/TextHelper.ts`。`name` と `dateTimeFormatter` を持つユーザーを受け取るので、クライアント・サーバーどちらで作成しても作成者の設定に従う。置き換え後はプレーンテキストなので、後から設定を変えても変わらない）、タイトル欄の `/date` `/time` `/datetime`（`DocumentTitle.tsx`）とエディター拡張 `DateTime.ts` の同名コマンド（`app/components/Editor.tsx` がエディターの `dateTimeFormatter` prop で渡し、コマンド実行時に読む。渡されなければ `DateTimeFormatter.default`）、Asana 連携のタスクの期限（`plugins/asana/server/asana.ts`。取得する本人の設定に従う。期限は時刻を持たない暦日で `parseISODate` がサーバーのローカル深夜に解決するので、`formatDate` の `timeZone` オプションでその同じゾーンのまま描き、本人のタイムゾーンで前日にずれないようにしている）。サーバー側の `User.dateTimeFormatter` は `team` が読み込まれていないとワークスペース既定値を使えないので、その場合は警告ログを出す。上流の `shared/utils/date.ts` にあった `getCurrentDateAsString` などの3関数は、これらに置き換えたので削除した。
+- 「3分前」のような相対表示は変えていない。日付メンション（`shared/editor/nodes/Mention.tsx` の `dateToReadable`）も変えていない。メール・エクスポート・公開共有ページに含まれる日付メンションは閲覧者の情報が渡らない経路なので、対応するなら別途その経路の追修が要る。
+
+### 注意事項
+
+- 上流をマージするとき、`shared/types.ts`（`DateFormat`、`TimeFormat`、`UserPreference` / `TeamPreference` の `DateFormat` / `TimeFormat`）、`shared/constants.ts` の `TeamPreferenceDefaults`、`server/routes/api/users/schema.ts`・`server/routes/api/teams/schema.ts` の `preferences` スキーマ（`strictObject` なので、項目が無いと保存時に拒否される）、`app/models/User.ts`・`server/models/User.ts` の `dateTimeFormatter`、`app/editor/index.tsx` の `dateTimeFormatter` prop と `app/components/Editor.tsx` での受け渡し、`app/hooks/useLocaleTime.ts`（上流の `format` prop は `year` / `time` prop に置き換えてある。上流が `format={{ en_US: ... }}` を渡す呼び出しを足してきたら `year` / `time` に読み替える）、設定画面（`app/scenes/Settings/Details.tsx`・`Preferences.tsx`、共通の選択肢 `app/hooks/useDateTimeFormatOptions.ts`）に差分があれば、この機能を保つように解決する。
+- 上流が `app/utils/date.ts` の `dateToExpiry`（ロケールの代わりに `DateTimeFormatter` を受け取る）や `shared/utils/TextHelper.ts`・`shared/utils/ProsemirrorHelper.ts` の `replaceTemplateVariables`（`TemplateVariablesUser` を受け取る）の引数を変えたら、こちらの形に合わせ直す。上流が `getCurrentDateAsString` などを使う箇所を足してきたら `DateTimeFormatter` に読み替える。
+- 新しい文言の日本語訳は `shared/i18n/locales/ja_JP/translation.json` に手で追加してある（翻訳ポータルは上流専用でフォークからは使えない）。英語カタログは `node_modules/.bin/i18next --silent '{shared,app,server,plugins}/**/*.{ts,tsx}'` で抽出するが、Windows で実行すると改行が CRLF になるので `sed -i 's/\r$//'` で戻し、ファイル走査順の違いで既存キーが移動していたら元の位置に戻す。
+
 ## Asana連携（タスク・プロジェクトのプレビューをユーザー個人の権限で取得する）
 
 ### 変更の概要

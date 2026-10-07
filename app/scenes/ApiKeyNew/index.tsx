@@ -11,8 +11,8 @@ import Input from "~/components/Input";
 import type { Option } from "~/components/InputSelect";
 import { InputSelect } from "~/components/InputSelect";
 import Text from "~/components/Text";
+import useDateTimeFormatter from "~/hooks/useDateTimeFormatter";
 import useStores from "~/hooks/useStores";
-import useUserLocale from "~/hooks/useUserLocale";
 import { dateToExpiry } from "~/utils/date";
 import ExpiryDatePicker from "./components/ExpiryDatePicker";
 import { ExpiryType, ExpiryValues, calculateExpiryDate } from "./utils";
@@ -35,7 +35,7 @@ function ApiKeyNew({ onSubmit }: Props) {
 
   const { apiKeys } = useStores();
   const { t } = useTranslation();
-  const userLocale = useUserLocale();
+  const formatter = useDateTimeFormatter();
 
   const submitDisabled =
     isSaving || !name || (!expiresAt && expiryType !== ExpiryType.NoExpiration);
@@ -144,7 +144,7 @@ function ApiKeyNew({ onSubmit }: Props) {
           ) : (
             <StyledExpiryText type="secondary" size="small">
               {expiresAt
-                ? `${dateToExpiry(expiresAt.toString(), t, userLocale)}.`
+                ? `${dateToExpiry(expiresAt.toString(), t, formatter)}.`
                 : `${t("Never expires")}.`}
             </StyledExpiryText>
           )}

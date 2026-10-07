@@ -12,7 +12,9 @@ import {
   EmailDisplay,
   CommentingAccess,
   CommentMarkStyle,
+  DateFormat,
   NotificationBadgeType,
+  TimeFormat,
 } from "./types";
 
 export const MAX_AVATAR_DISPLAY = 6;
@@ -99,6 +101,8 @@ export const TeamPreferenceDefaults: TeamPreferences = {
   [TeamPreference.MCP]: true,
   [TeamPreference.DisabledEmbeds]: [],
   [TeamPreference.CommentMarkStyle]: CommentMarkStyle.Underline,
+  [TeamPreference.DateFormat]: DateFormat.Locale,
+  [TeamPreference.TimeFormat]: TimeFormat.Locale,
 };
 
 export const DocumentPreferenceDefaults: DocumentPreferences = {

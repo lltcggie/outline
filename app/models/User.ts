@@ -12,8 +12,8 @@ import {
   UserRole,
 } from "@shared/types";
 import type { NotificationSettings } from "@shared/types";
+import { DateTimeFormatter } from "@shared/utils/DateTimeFormatter";
 import type { locales } from "@shared/utils/date";
-import { unicodeCLDRtoBCP47 } from "@shared/utils/date";
 import { client } from "~/utils/ApiClient";
 import type Document from "./Document";
 import type Group from "./Group";
@@ -181,13 +181,14 @@ class User extends ParanoidModel implements Searchable {
       return undefined;
     }
 
-    const language = this.store.rootStore.auth?.user?.language;
+    const formatter =
+      this.store.rootStore.auth?.user?.dateTimeFormatter ??
+      DateTimeFormatter.default;
 
     try {
-      return new Date(now(60000)).toLocaleTimeString(
-        language ? unicodeCLDRtoBCP47(language) : undefined,
-        { hour: "numeric", minute: "numeric", timeZone: this.timezone }
-      );
+      return formatter.formatTime(new Date(now(60000)), {
+        timeZone: this.timezone,
+      });
     } catch {
       return undefined;
     }
@@ -222,6 +223,22 @@ class User extends ParanoidModel implements Searchable {
       this.store.rootStore.auth?.team?.getPreference(
         TeamPreference.CommentMarkStyle
       ) || CommentMarkStyle.Underline
+    );
+  }
+
+  /**
+   * Writes out absolute dates and times the way this user has chosen to see
+   * them, in the user's language. The format comes from the user's preference,
+   * else the team default. Kept alive so that the many non-observer `Time`
+   * components share one instance instead of recomputing it on every render.
+   *
+   * @returns the formatter.
+   */
+  @computed({ keepAlive: true })
+  get dateTimeFormatter(): DateTimeFormatter {
+    return DateTimeFormatter.fromPreferences(
+      this,
+      this.store.rootStore.auth?.team?.preferences
     );
   }
 

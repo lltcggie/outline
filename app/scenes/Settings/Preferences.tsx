@@ -4,7 +4,7 @@ import * as React from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { languageOptions as availableLanguages } from "@shared/i18n";
-import type { CommentMarkStyle } from "@shared/types";
+import type { CommentMarkStyle, DateFormat, TimeFormat } from "@shared/types";
 import {
   NotificationBadgeType,
   TeamPreference,
@@ -21,6 +21,7 @@ import Text from "~/components/Text";
 import useCommentMarkStyleOptions from "~/hooks/useCommentMarkStyleOptions";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
 import useCurrentUser from "~/hooks/useCurrentUser";
+import useDateTimeFormatOptions from "~/hooks/useDateTimeFormatOptions";
 import usePolicy from "~/hooks/usePolicy";
 import useStores from "~/hooks/useStores";
 import UserDelete from "../UserDelete";
@@ -175,6 +176,26 @@ function Preferences() {
     [t, user]
   );
 
+  const { dateFormatOptions, timeFormatOptions } = useDateTimeFormatOptions();
+
+  const handleDateFormatChange = React.useCallback(
+    async (value: string) => {
+      user.setPreference(UserPreference.DateFormat, value as DateFormat);
+      await user.save();
+      toast.success(t("Preferences saved"));
+    },
+    [user, t]
+  );
+
+  const handleTimeFormatChange = React.useCallback(
+    async (value: string) => {
+      user.setPreference(UserPreference.TimeFormat, value as TimeFormat);
+      await user.save();
+      toast.success(t("Preferences saved"));
+    },
+    [user, t]
+  );
+
   const handleThemeChange = React.useCallback(
     (theme: string) => {
       ui.setTheme(theme as Theme);
@@ -223,6 +244,34 @@ function Preferences() {
           value={user.language}
           onChange={handleLanguageChange}
           label={t("Language")}
+          labelHidden
+        />
+      </SettingRow>
+      <SettingRow
+        name={UserPreference.DateFormat}
+        label={t("Date format")}
+        description={t(
+          "Choose how dates are written out, for example in document history."
+        )}
+      >
+        <InputSelect
+          options={dateFormatOptions}
+          value={user.dateTimeFormatter.dateFormat}
+          onChange={handleDateFormatChange}
+          label={t("Date format")}
+          labelHidden
+        />
+      </SettingRow>
+      <SettingRow
+        name={UserPreference.TimeFormat}
+        label={t("Time format")}
+        description={t("Choose between the 12-hour and 24-hour clock.")}
+      >
+        <InputSelect
+          options={timeFormatOptions}
+          value={user.dateTimeFormatter.timeFormat}
+          onChange={handleTimeFormatChange}
+          label={t("Time format")}
           labelHidden
         />
       </SettingRow>
