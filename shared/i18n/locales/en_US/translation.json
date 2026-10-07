@@ -1654,7 +1654,6 @@
   "Expires in {{ count }} day": "Expires in {{ count }} day",
   "Expires in {{ count }} day_plural": "Expires in {{ count }} days",
   "You need to accept the permissions in Asana to connect {{appName}} to your account. Try again?": "You need to accept the permissions in Asana to connect {{appName}} to your account. Try again?",
-  "The Asana account is already linked by another user in this workspace.": "The Asana account is already linked by another user in this workspace.",
   "Link your Asana account to enable previews of Asana tasks and projects in documents. Previews are fetched with your own Asana permissions and are only shown to you, other members only see what their own linked account can access.": "Link your Asana account to enable previews of Asana tasks and projects in documents. Previews are fetched with your own Asana permissions and are only shown to you, other members only see what their own linked account can access.",
   "Enabled on": "Enabled on",
   "Disconnecting will prevent you from seeing previews of links from Asana in documents. Are you sure?": "Disconnecting will prevent you from seeing previews of links from Asana in documents. Are you sure?",
