@@ -1,3 +1,5 @@
+import type { CommentMarkStyle } from "./team";
+
 /** Sidebar sections that a user can reorder. */
 export enum SidebarSection {
   /** The starred documents section. */
@@ -32,6 +34,8 @@ export enum UserPreference {
   NotificationBadge = "notificationBadge",
   /** The display order of the reorderable sections in the sidebar. */
   SidebarSectionOrder = "sidebarSectionOrder",
+  /** How text with inline comments is highlighted in documents. */
+  CommentMarkStyle = "commentMarkStyle",
 }
 
 /** Styles of prefix that can be shown before headings. */
@@ -80,4 +84,5 @@ export type UserPreferences = {
   [UserPreference.ShowDocumentStats]?: boolean;
   [UserPreference.NotificationBadge]?: NotificationBadgeType;
   [UserPreference.SidebarSectionOrder]?: SidebarSection[];
+  [UserPreference.CommentMarkStyle]?: CommentMarkStyle;
 };

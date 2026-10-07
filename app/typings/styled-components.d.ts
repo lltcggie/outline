@@ -1,5 +1,6 @@
 // import original module declarations
 import "styled-components";
+import type { CommentMarkStyle } from "@shared/types";
 
 // and extend them!
 declare module "styled-components" {
@@ -141,7 +142,12 @@ declare module "styled-components" {
     textDiffDeleted: string;
     textDiffDeletedBackground: string;
     placeholder: string;
+    commentMarkStyle: CommentMarkStyle;
     commentMarkBackground: string;
+    commentMarkHoverBackground: string;
+    commentMarkActiveBackground: string;
+    commentMarkHighlightBackground: string;
+    commentMarkHighlightBorder: string;
     commentedImageOutlineLight: string;
     commentedImageOutlineDark: string;
     sidebarBackground: string;

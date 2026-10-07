@@ -1,6 +1,50 @@
 import { darken, lighten, transparentize } from "polished";
 import type { DefaultTheme, Colors } from "styled-components";
+import { CommentMarkStyle } from "../types";
 import breakpoints from "./breakpoints";
+
+export interface ThemeOptions {
+  /** How text with inline comments is highlighted in the editor. */
+  commentMarkStyle?: CommentMarkStyle;
+}
+
+/** The yellow used by the "highlight" comment mark style. */
+const commentHighlightYellow = "#FFC400";
+
+/**
+ * Builds the colors for inline comment marks, resolved for the chosen style so
+ * that editor styles can use them without branching on the style.
+ */
+const buildCommentMarkTheme = (
+  colors: Pick<Colors, "brand">,
+  style: CommentMarkStyle,
+  isDark: boolean
+) => {
+  const underline = transparentize(0.5, colors.brand.marine);
+  const highlight = isDark
+    ? {
+        background: transparentize(0.75, commentHighlightYellow),
+        hover: transparentize(0.6, commentHighlightYellow),
+        active: transparentize(0.45, commentHighlightYellow),
+        border: transparentize(0.2, commentHighlightYellow),
+      }
+    : {
+        background: "#FFF0B3",
+        hover: "#FFE380",
+        active: commentHighlightYellow,
+        border: commentHighlightYellow,
+      };
+  const isHighlight = style === CommentMarkStyle.Highlight;
+
+  return {
+    commentMarkStyle: style,
+    commentMarkBackground: underline,
+    commentMarkHoverBackground: isHighlight ? highlight.hover : underline,
+    commentMarkActiveBackground: isHighlight ? highlight.active : underline,
+    commentMarkHighlightBackground: highlight.background,
+    commentMarkHighlightBorder: highlight.border,
+  };
+};
 
 const defaultColors: Colors = {
   transparent: "transparent",
@@ -58,7 +102,11 @@ const spacing = {
   sidebarResizeMinWidth: sidebarMinWidth + sidebarPadding,
 };
 
-const buildBaseTheme = (input: Partial<Colors>) => {
+const buildBaseTheme = (
+  input: Partial<Colors>,
+  options: ThemeOptions,
+  isDark: boolean
+) => {
   const colors = {
     ...defaultColors,
     ...input,
@@ -78,7 +126,11 @@ const buildBaseTheme = (input: Partial<Colors>) => {
     selected: colors.accent,
     textHighlight: "#FDEA9B",
     textHighlightForeground: colors.almostBlack,
-    commentMarkBackground: transparentize(0.5, colors.brand.marine),
+    ...buildCommentMarkTheme(
+      colors,
+      options.commentMarkStyle ?? CommentMarkStyle.Underline,
+      isDark
+    ),
     commentedImageOutlineDark: colors.brand.marine,
     commentedImageOutlineLight: transparentize(0.7, colors.brand.marine),
     code: colors.lightBlack,
@@ -117,8 +169,11 @@ const buildBaseTheme = (input: Partial<Colors>) => {
   };
 };
 
-export const buildLightTheme = (input: Partial<Colors>): DefaultTheme => {
-  const colors = buildBaseTheme(input);
+export const buildLightTheme = (
+  input: Partial<Colors>,
+  options: ThemeOptions = {}
+): DefaultTheme => {
+  const colors = buildBaseTheme(input, options, false);
 
   return {
     ...colors,
@@ -183,8 +238,11 @@ export const buildLightTheme = (input: Partial<Colors>): DefaultTheme => {
   };
 };
 
-export const buildDarkTheme = (input: Partial<Colors>): DefaultTheme => {
-  const colors = buildBaseTheme(input);
+export const buildDarkTheme = (
+  input: Partial<Colors>,
+  options: ThemeOptions = {}
+): DefaultTheme => {
+  const colors = buildBaseTheme(input, options, true);
 
   return {
     ...colors,
@@ -273,8 +331,11 @@ export const buildDarkTheme = (input: Partial<Colors>): DefaultTheme => {
   };
 };
 
-export const buildPitchBlackTheme = (input: Partial<Colors>) => {
-  const colors = buildDarkTheme(input);
+export const buildPitchBlackTheme = (
+  input: Partial<Colors>,
+  options: ThemeOptions = {}
+) => {
+  const colors = buildDarkTheme(input, options);
 
   return {
     ...colors,

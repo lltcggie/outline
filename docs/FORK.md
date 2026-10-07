@@ -57,6 +57,28 @@ OAuthアプリケーションのスコープ（`read_api read_user`）とコー�
 - Iframelyを使わない場合は `IFRAMELY_API_KEY` / `IFRAMELY_URL` を設定しないこと。
 - 上流をマージするとき、上流が `shared/editor/version.ts` の `EDITOR_VERSION` を上げていたら、こちらのメジャー番号が上流より大きくなるよう調整すること。
 
+## インラインコメントの強調表示スタイルを設定で切り替える
+
+### 変更の概要
+
+インラインコメントが付いた本文の強調表示を、上流の「下線」（細い水色の下線、ホバーで塗りつぶし）と、Confluenceに近い「ハイライト」（黄色の背景と下線、ホバー・選択で濃くなる）から選べるようにした。上流では下線のみ。以前はnginxの `sub_filter` で `</head>` の直前にCSSを差し込んで同じ見た目にしていたが、本体の設定に置き換えた。
+
+- ワークスペースの既定値: 設定 → 詳細 → 表示の「Comment highlight」。管理者が選び、「保存」で反映される（チーム設定 `commentMarkStyle`、既定は `underline`）。
+- ユーザーごとの上書き: 設定 → 環境設定 → 表示の「Comment highlight」。未設定ならワークスペースの既定値に従う（ユーザー設定 `commentMarkStyle`）。「Separate editing」と同じ方式で、一度選ぶとその後ワークスペースの既定値を変えても本人には反映されない。
+- 色はテーマで持つ（`shared/styles/theme.ts` の `buildCommentMarkTheme`）。ライトは `#FFF0B3` / ホバー `#FFE380` / 選択 `#FFC400`、下線 `#FFC400`。ダークは同じ黄色を半透明にしたもので、文字色はテーマのまま。印刷時は背景も下枠も下線も付かない（`Styles.ts` の `commentMarkStyle` に入れ子で書いた `@media print` が同じ詳細度で上書きする。上流の `@media print { .comment { … } }` は詳細度が低く効かないので、そちらには頼らない）。
+- 有効なスタイルは `User` モデルの `commentMarkStyle`（ユーザー設定 → チーム設定 → `underline`）で決まり、`Theme` コンポーネントが `useBuildTheme` に渡す。テーマ側でスタイルごとの色（`commentMarkHoverBackground`・`commentMarkActiveBackground` など）を解決済みにしているので、`shared/editor/components/Styles.ts`（通常・ホバー）と `app/editor/index.tsx`（選択中・サイドバーからのホバー）はスタイルで分岐せず、下線か背景＋下枠かの描画だけ `Styles.ts` の `commentMarkDecoration` が切り替える。エディターへ個別にpropsを渡してはいない。
+
+### 既存のインスタンスの移行手順
+
+1. Outlineをこのバージョンに更新する。
+2. nginx側の差し込み（`sub_filter '</head>' '<style id="outline-custom">…</style></head>'`、および `proxy_set_header Accept-Encoding ""`・`sub_filter_types`・`sub_filter_once` がこの目的だけなら、それらも）を削除してnginxを再読み込みする。残しておくと `!important` 付きのCSSが本体の設定より優先され、設定を変えても見た目が変わらない。
+3. 設定 → 詳細で「Comment highlight」を「Highlight」にして保存する。
+
+### 注意事項
+
+- 上流をマージするとき、`shared/types.ts`（`CommentMarkStyle`、`UserPreference.CommentMarkStyle`、`TeamPreference.CommentMarkStyle`）、`shared/constants.ts` の `TeamPreferenceDefaults`、`server/routes/api/users/schema.ts`・`server/routes/api/teams/schema.ts` の `preferences` スキーマ（`strictObject` なので、項目が無いと保存時に拒否される）、`shared/styles/theme.ts` と `app/typings/styled-components.d.ts` のテーマ項目、`app/models/User.ts` の `commentMarkStyle`、`app/hooks/useBuildTheme.ts`・`app/components/Theme.tsx`・`app/scenes/Shared/index.tsx`（共有ページのテーマにも渡す）、`shared/editor/components/Styles.ts` の `commentMarkDecoration`、`app/editor/index.tsx` の `EditorContainer`、サイドバー引用の縦線色 `app/scenes/Document/components/Comments/HighlightText.ts`、設定画面（`app/scenes/Settings/Details.tsx`・`Preferences.tsx`、共通の選択肢 `app/hooks/useCommentMarkStyleOptions.ts`）に差分があれば、この機能を保つように解決する。
+- 上流がコメントマークのクラス名（`EditorStyleHelper.comment`）や `data-resolved`・`data-draft`・`data-user-id` 属性を変えたら、`Styles.ts` の `commentMarkStyle` のセレクターを合わせる。
+
 ## Asana連携（タスク・プロジェクトのプレビューをユーザー個人の権限で取得する）
 
 ### 変更の概要

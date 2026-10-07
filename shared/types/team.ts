@@ -35,6 +35,14 @@ export enum CommentingAccess {
   Everyone = "everyone",
 }
 
+/** How text with inline comments is highlighted in documents. */
+export enum CommentMarkStyle {
+  /** A thin underline below the text, filled in on hover. */
+  Underline = "underline",
+  /** A filled background behind the text with a bottom border. */
+  Highlight = "highlight",
+}
+
 /** Workspace-level preferences. */
 export enum TeamPreference {
   /** Whether documents have a separate edit mode instead of always editing. */
@@ -65,6 +73,8 @@ export enum TeamPreference {
   MCP = "mcp",
   /** List of disabled embed provider titles. */
   DisabledEmbeds = "disabledEmbeds",
+  /** How text with inline comments is highlighted in documents by default. */
+  CommentMarkStyle = "commentMarkStyle",
 }
 
 /** Workspace preference values, keyed by preference. */
@@ -83,4 +93,5 @@ export type TeamPreferences = {
   [TeamPreference.EmailDisplay]?: EmailDisplay;
   [TeamPreference.MCP]?: boolean;
   [TeamPreference.DisabledEmbeds]?: string[];
+  [TeamPreference.CommentMarkStyle]?: CommentMarkStyle;
 };

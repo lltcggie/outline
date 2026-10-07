@@ -11,6 +11,7 @@ import {
   UserPreference,
   EmailDisplay,
   CommentingAccess,
+  CommentMarkStyle,
   NotificationBadgeType,
 } from "./types";
 
@@ -97,6 +98,7 @@ export const TeamPreferenceDefaults: TeamPreferences = {
   [TeamPreference.EmailDisplay]: EmailDisplay.Members,
   [TeamPreference.MCP]: true,
   [TeamPreference.DisabledEmbeds]: [],
+  [TeamPreference.CommentMarkStyle]: CommentMarkStyle.Underline,
 };
 
 export const DocumentPreferenceDefaults: DocumentPreferences = {

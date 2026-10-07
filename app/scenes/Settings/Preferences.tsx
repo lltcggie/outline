@@ -4,6 +4,7 @@ import * as React from "react";
 import { Trans, useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { languageOptions as availableLanguages } from "@shared/i18n";
+import type { CommentMarkStyle } from "@shared/types";
 import {
   NotificationBadgeType,
   TeamPreference,
@@ -17,6 +18,7 @@ import { InputSelect } from "~/components/InputSelect";
 import Scene from "~/components/Scene";
 import Switch from "~/components/Switch";
 import Text from "~/components/Text";
+import useCommentMarkStyleOptions from "~/hooks/useCommentMarkStyleOptions";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
 import useCurrentUser from "~/hooks/useCurrentUser";
 import usePolicy from "~/hooks/usePolicy";
@@ -76,6 +78,20 @@ function Preferences() {
   const handleCommentsInGutterChange = React.useCallback(
     async (checked: boolean) => {
       user.setPreference(UserPreference.CommentsInGutter, checked);
+      await user.save();
+      toast.success(t("Preferences saved"));
+    },
+    [user, t]
+  );
+
+  const commentMarkStyleOptions = useCommentMarkStyleOptions();
+
+  const handleCommentMarkStyleChange = React.useCallback(
+    async (value: string) => {
+      user.setPreference(
+        UserPreference.CommentMarkStyle,
+        value as CommentMarkStyle
+      );
       await user.save();
       toast.success(t("Preferences saved"));
     },
@@ -261,6 +277,21 @@ function Preferences() {
           name={UserPreference.CommentsInGutter}
           checked={user.getPreference(UserPreference.CommentsInGutter)}
           onChange={handleCommentsInGutterChange}
+        />
+      </SettingRow>
+      <SettingRow
+        name={UserPreference.CommentMarkStyle}
+        label={t("Comment highlight")}
+        description={t(
+          "Choose how text with inline comments is highlighted in documents."
+        )}
+      >
+        <InputSelect
+          options={commentMarkStyleOptions}
+          value={user.commentMarkStyle}
+          onChange={handleCommentMarkStyleChange}
+          label={t("Comment highlight")}
+          labelHidden
         />
       </SettingRow>
       <SettingRow
