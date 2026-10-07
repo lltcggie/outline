@@ -146,7 +146,11 @@ class Integration<T = unknown> extends ParanoidModel<
       case IntegrationType.LinkedAccount: {
         const settings = this
           .settings as IntegrationSettings<IntegrationType.LinkedAccount>;
-        return { figma: settings?.figma, gitlab: settings?.gitlab };
+        return {
+          asana: settings?.asana,
+          figma: settings?.figma,
+          gitlab: settings?.gitlab,
+        };
       }
       default:
         return undefined;

@@ -53,9 +53,77 @@ OAuthアプリケーションのスコープ（`read_api read_user`）とコー�
 ### 注意事項
 
 - 移行前に送信済みのWebhookやメールに含まれた内容は回収できない。
-- GitHub・Linear連携は引き続きワークスペース共有のトークンで取得する。閲覧権限の分離が必要な場合は、これらの連携を有効にしないこと。
+- GitHub・Linear連携は引き続きワークスペース共有のトークンで取得する。閲覧権限の分離が必要な場合は、これらの連携を有効にしないこと。Asana連携（後述）はユーザー単位で取得する。
 - Iframelyを使わない場合は `IFRAMELY_API_KEY` / `IFRAMELY_URL` を設定しないこと。
 - 上流をマージするとき、上流が `shared/editor/version.ts` の `EDITOR_VERSION` を上げていたら、こちらのメジャー番号が上流より大きくなるよう調整すること。
+
+## Asana連携（タスク・プロジェクトのプレビューをユーザー個人の権限で取得する）
+
+### 変更の概要
+
+別リポジトリ [outline-asana-unfurl](https://github.com/lltcggie/outline-asana-unfurl) のプラグインを `plugins/asana` として本体に取り込んだ。もとはコンパイル済みファイルをコンテナにマウントし、1つのトークン（`ASANA_ACCESS_TOKEN`）で全員分のプレビューを取得していた。取り込みにあたり、GitLab連携と同じく各ユーザーが自分のAsanaアカウントを連携する方式に変え、本体を変更できなかったために冗長だった部分も本体側で解消した。上流にAsana連携はない。
+
+- 管理者はAsanaのOAuthアプリケーションを作り、環境変数 `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` を設定する。各ユーザーは設定 → Asana の「Connect」で自分のAsanaアカウントを連携する（閲覧者・ゲストも可）。プレビューは本人のトークンだけで取得され、連携していないユーザーには通常のリンクとして表示される。1つのAsanaアカウントを連携できるのはワークスペース内で1人だけ。
+- タスクはIssue型のメンションとして表示される（GitLabのIssueと同じ見た目）。インラインでは完了状態のアイコン・タスク名・セクション名、ホバーでは担当者・期限・説明（ノート）・所属するプロジェクトとセクションのラベル（プロジェクトの色付き）が出る。プロジェクトはProject型として、プロジェクトの色・名前・完了タスクの割合を表示し、ホバーでは説明・状態（アクティブ／アーカイブ）・オーナー・期日が出る。別リポジトリ版はURL型（汎用リンク表示）だった。
+- 表示文言（「担当」「期限」「完了」など）は閲覧者の言語設定で翻訳される。別リポジトリ版は日本語の直書きだった。
+- 貼り付けメニューの「メンション」は、連携の有無にかかわらず `ASANA_CLIENT_ID` が設定されていればタスク・プロジェクトのURLをIssue型・Project型にする。クライアントの `PluginManager` に `Hook.MentionProvider` を追加し、`plugins/asana/client/index.tsx` が登録したものを `app/utils/mention.ts` の `getMentionTypeForURL` が参照する。Markdown・API・MCPで作られたメンションはサーバー側の `MentionProvider` で型が決まる。
+- 展開キャッシュはユーザー単位。`app.asana.com` のURLは、本人が連携していない場合や、受信トレイ・検索など解釈できないURLでも、Iframelyなど後続の展開プロバイダーに渡さない。`http://` で貼られたリンクも同じタスク・プロジェクトとして扱う（Asanaがhttpsにリダイレクトするため）。
+- アクセストークンは1時間で期限切れになり、リフレッシュトークンで自動更新される。Asana側でアプリの認可を取り消すと、次にプレビューを取得したときにAsanaがトークンを拒否（401）し、リフレッシュも拒否されるので、連携は自動的に解除される（ログに `Asana access of user … was revoked` が出る）。設定 → Asana を開き直すと「Connect」に戻っているので、連携し直す。
+- プロジェクトの完了タスクの割合は `task_counts` エンドポイントで取得する。このエンドポイントは他より厳しいレート制限が掛かるため、取得できなかったときは割合だけを省いてプロジェクトを表示する。
+- 本体側の変更: `IntegrationService.Asana` の追加、`IssueTrackerIntegrationService` へのAsanaの追加とタスク用のステータスアイコン（`shared/components/IssueStatusIcon/AsanaIssueStatusIcon.tsx`）、展開結果のURLからサービスを判定する `shared/utils/integrations.ts`（メンションとホバープレビューで重複していた判定をまとめた）、LinkedAccount型の `presentSettings` へのAsanaアカウントの追加。環境変数は本体の `Environment` クラスで検証する。別リポジトリ版にあった起動ログの独自出力、data URIのアイコン、独自の環境変数パーサーは不要になった。
+
+### 必要なもの
+
+[Asanaの開発者コンソール](https://app.asana.com/0/my-apps)で OAuth アプリケーションを作る。
+
+- リダイレクトURL: `<OutlineのURL>/api/asana.callback`
+- パーミッション: 「OAuth scopes」を使う場合は `tasks:read`・`projects:read`・`users:read` を選ぶ。「Full permissions」のアプリケーションにした場合は、環境変数 `ASANA_OAUTH_SCOPES` を `default` にする（Full permissions のアプリケーションは個別のスコープを要求できず、スコープ付きのアプリケーションはスコープの指定が必須のため）。
+
+### 環境変数
+
+| 変数 | 必須 | 内容 |
+| --- | --- | --- |
+| `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` | 任意 | OAuthアプリケーションのクライアントIDとシークレット。両方設定すると連携が有効になる。片方だけ設定すると起動時に環境変数の検証エラーで停止する。 |
+| `ASANA_OAUTH_SCOPES` | 任意 | 連携時に要求するスコープ（スペース区切り）。既定は `tasks:read projects:read users:read`。Full permissions のアプリケーションでは `default`。 |
+| `ASANA_SHOW_SECTION` | 任意 | タスク名の横にセクション名を表示するか。既定は `true`。 |
+| `ASANA_CACHE_SECONDS` | 任意 | タスク・プロジェクトの取得結果をユーザーごとにキャッシュする秒数（1以上。キャッシュは無効にできない）。既定は `300`。Asanaのレート制限（無料プラン 150回/分、有料プラン 1,500回/分）はトークン＝ユーザーごとに掛かる。制限に当たると、そのリンクは60秒ほど通常のリンクとして表示され、ログに `Failed to fetch resource from Asana` が出る。 |
+
+### 既存のインスタンスの移行手順（別リポジトリ版のプラグインを使っていた場合）
+
+1. **OAuthアプリケーションを作る。** 「必要なもの」のとおり。
+2. **旧プラグインのマウントを外す。** `outline` サービスから、ボリュームのマウント `./asana-unfurl:/opt/outline/build/plugins/asana-unfurl:ro` を**必ず外す**。マウント先のディレクトリ名が同梱版（`build/plugins/asana`）と違うため、残っていると両方が読み込まれ、旧版が共有トークンで取得した内容が引き続き全員に表示される。
+3. **環境変数を替える。** `ASANA_ACCESS_TOKEN`（`ASANA_ACCESS_TOKEN_FILE`）を削除し、`ASANA_CLIENT_ID` と `ASANA_CLIENT_SECRET` を設定する（`docker.env` と `environment:` のどちらに書くかの注意は旧READMEと同じ）。`ASANA_SHOW_SECTION`・`ASANA_CACHE_SECONDS` はそのまま使える。
+4. **Outlineをこのバージョンに更新して再起動する。**
+
+   ```bash
+   docker compose up -d outline
+   ```
+
+5. **保存済みの展開データを消去する。** 旧版が取得した内容（タスク名・セクション・担当者・期限）は、GitLab連携の変更より前のクライアントではメンションの属性として文書に保存されていた。GitLab連携の移行手順2のスクリプト（`20261005000000-remove-unfurled-mention-data.js`）はサービスを問わず外部メンションの保存データを取り除くので、まだ実行していなければ実行する。実行済みなら不要。
+6. **残っているキャッシュを消す（任意）。** 旧版の取得結果は最長 `ASANA_CACHE_SECONDS`（既定5分）、解釈できなかったリンクは最長1時間、Redisに残る。本人が連携した時点でその人の分は消えるが、全員分をすぐに消したい場合は次を実行する（上のスクリプトも消去する）。
+
+   ```bash
+   docker compose exec redis sh -c "redis-cli --scan --pattern 'unfurl:*' | xargs -r redis-cli del"
+   ```
+
+7. **全員に連携を案内する。** 管理者を含む全員に、設定 → Asana で自分のAsanaアカウントを連携してもらう。連携するまでAsanaのリンクは通常のリンクとして表示される。
+8. **旧版用のアカウントを片付ける。** 旧版のために用意した連携専用のAsanaアカウントとそのPersonal Access Tokenは不要になるので失効させる。
+
+### 注意事項
+
+- 旧版で作られたメンションはURL型のまま残る。閲覧者が連携していれば名前は表示されるが、ステータスアイコンやセクションは付かない。Issue型にするには、リンクを貼り直してメンションを選ぶ。
+- 旧版と違い、本人から見えないタスクは通常のリンクとして表示される（旧版は共有トークンから見えないタスクが通常のリンクになっていた）。
+- Asanaのノート（notes）はプレーンテキストだが、ホバープレビューの説明はMarkdownとして描画される。そのため `plugins/asana/server/asana.ts` の `escapeMarkdown` で記号をエスケープし、改行を保ったまま渡している（300文字に切り詰めた後にエスケープするので、エスケープ分は上限に数えない）。
+- タスクの作成者名は、Asana APIが本人以外の作成者名を返さない場合は取れない。そのときホバーには作成者なしで「作成 〜前」とだけ表示される（`app/components/HoverPreview/HoverPreviewIssue.tsx` を変更）。
+- 上流をマージするとき、`shared/types.ts`（`IntegrationService.Asana`・`IssueTrackerIntegrationService`・LinkedAccount型の設定）、`server/models/Integration.ts` の `presentSettings`、`shared/components/IssueStatusIcon/index.tsx`、`shared/utils/integrations.ts` とその呼び出し元（`shared/editor/components/Mentions.tsx`・`app/components/HoverPreview/HoverPreviewIssue.tsx`）、`app/utils/PluginManager.ts` の `Hook.MentionProvider`、`app/utils/mention.ts` の `getMentionTypeForURL` とその呼び出し元（`app/editor/components/PasteMenu.tsx`）に差分があれば、Asana分を保つように解決する。
+- 上流が `UnfurlResponse` のIssue型・Project型の項目を変えたら、`plugins/asana/server/asana.ts` の `unfurlTask`・`unfurlProject` を合わせる（`satisfies` で `yarn tsc` が止まる）。
+- 連携が自動解除されるのは、Asanaのトークンエンドポイントがリフレッシュを `invalid_grant`（リフレッシュトークンの失効・取り消し）で拒否したときだけ。`ASANA_CLIENT_SECRET` の誤りやローテーション漏れは `invalid_client` で拒否されるため連携は保持され、ログに `Asana refused to refresh an access token, check ASANA_CLIENT_ID and ASANA_CLIENT_SECRET` がerrorで出る。アクセストークンは1時間で切れるので、シークレットを替えたら環境変数も同時に更新すること。
+- OAuthアプリケーションや `ASANA_OAUTH_SCOPES` に必要なスコープが無いと、Asanaは403で `The following scopes must be present …` を返す。このときはログに `Asana refused the request for a missing OAuth scope` がwarnで出る（本人に見えないタスク・プロジェクトの403・404はdebugのみ）。Asanaが既存のエンドポイントにスコープ要件を追加したときもこの形で現れる。
+
+### 開発・テスト
+
+- `yarn test plugins/asana` でURLの解析・OAuthコールバック・展開のテストを実行する。Asana APIはモックする。
+- `yarn test shared/utils/integrations.test.ts` でURLからのサービス判定のテストを実行する。
 
 ## PGroongaによる日本語検索（`SEARCH_PROVIDER=pgroonga`）
 

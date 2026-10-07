@@ -26,7 +26,6 @@ import useStores from "../../hooks/useStores";
 import useShare from "../../hooks/useShare";
 import env from "../../env";
 import {
-  IntegrationService,
   UnfurlResourceType,
   type JSONValue,
   type UnfurlResponse,
@@ -35,6 +34,7 @@ import { cn } from "../styles/utils";
 import type { ComponentProps } from "../types";
 import lazyWithRetry from "../../utils/lazyWithRetry";
 import { sharedModelPath } from "../../utils/routeHelpers";
+import { getIssueTrackerService } from "../../utils/integrations";
 import { toDisplayUrl, sanitizeImageSrc } from "../../utils/urls";
 import Squircle from "../../components/Squircle";
 
@@ -315,19 +315,7 @@ export const MentionIssue = observer((props: ComponentProps) => {
   }
 
   const issue = unfurl as UnfurlResponse[UnfurlResourceType.Issue];
-
-  let service = IntegrationService.GitLab;
-  try {
-    const parsedUrl = new URL(issue.url);
-    service =
-      parsedUrl.hostname === "github.com"
-        ? IntegrationService.GitHub
-        : parsedUrl.hostname === "linear.app"
-          ? IntegrationService.Linear
-          : IntegrationService.GitLab;
-  } catch {
-    // Invalid URL in unfurl data, default to GitLab
-  }
+  const service = getIssueTrackerService(issue.url);
 
   return (
     <a

@@ -6,6 +6,7 @@ import type {
   UnfurlResponse,
 } from "../../types";
 import { IntegrationService } from "../../types";
+import { AsanaIssueStatusIcon } from "./AsanaIssueStatusIcon";
 import { GitHubIssueStatusIcon } from "./GitHubIssueStatusIcon";
 import { LinearIssueStatusIcon } from "./LinearIssueStatusIcon";
 import { GitLabIssueStatusIcon } from "./GitLabIssueStatusIcon";
@@ -36,6 +37,8 @@ function getIcon(props: Props) {
       return <LinearIssueStatusIcon {...props} />;
     case IntegrationService.GitLab:
       return <GitLabIssueStatusIcon {...props} />;
+    case IntegrationService.Asana:
+      return <AsanaIssueStatusIcon {...props} />;
   }
 }
 
