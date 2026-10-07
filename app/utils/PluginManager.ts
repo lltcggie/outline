@@ -24,6 +24,7 @@ export enum Hook {
   Icon = "icon",
   MentionProvider = "mentionProvider",
   InstanceUrl = "instanceUrl",
+  UrlMentionProvider = "urlMentionProvider",
 }
 
 /**
@@ -66,6 +67,11 @@ type PluginValueMap = {
       integration: Integration
     ) => MentionType | undefined;
   };
+  /**
+   * Recognizes the type of mention a pasted URL is converted to, for services
+   * that are not configured as a workspace integration.
+   */
+  [Hook.UrlMentionProvider]: (url: URL) => MentionType | undefined;
   [Hook.InstanceUrl]: {
     /** The integration service that this resolver is used for. */
     service: IntegrationService;

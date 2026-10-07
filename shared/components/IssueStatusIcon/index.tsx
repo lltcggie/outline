@@ -1,6 +1,8 @@
 import * as React from "react";
 import styled from "styled-components";
 import type { UnfurlResourceType, UnfurlResponse } from "../../types";
+import { isAsanaUrl } from "../../utils/integrations";
+import { AsanaIssueStatusIcon } from "./AsanaIssueStatusIcon";
 import { DefaultIssueStatusIcon } from "./DefaultIssueStatusIcon";
 import { WorkflowStatusIcon } from "./WorkflowStatusIcon";
 
@@ -10,17 +12,25 @@ export type BaseIconProps = {
   size?: number;
 };
 
+type Props = BaseIconProps & {
+  /** The URL of the issue, which decides the icon of trackers with their own. */
+  url?: string;
+};
+
 /**
- * Renders the status icon of an issue. Issues with a workflow state type show
- * its progress, others show whether they are open or closed.
+ * Renders the status icon of an issue. Asana tasks show whether they are
+ * completed, issues with a workflow state type show its progress, others show
+ * whether they are open or closed.
  *
  * @param props the issue state and display options.
  * @returns the icon.
  */
-export function IssueStatusIcon(props: BaseIconProps) {
+export function IssueStatusIcon({ url, ...props }: Props) {
   return (
     <Icon size={props.size} className={props.className}>
-      {props.state.type ? (
+      {isAsanaUrl(url) ? (
+        <AsanaIssueStatusIcon {...props} />
+      ) : props.state.type ? (
         <WorkflowStatusIcon {...props} />
       ) : (
         <DefaultIssueStatusIcon {...props} />

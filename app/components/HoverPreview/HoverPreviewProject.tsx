@@ -87,7 +87,15 @@ function HoverPreviewProject({
                     <MetadataRow>
                       <MetadataLabel>{t("Lead")}</MetadataLabel>
                       <Flex align="center" gap={6}>
-                        <Avatar src={lead.avatarUrl} size={AvatarSize.Toast} />
+                        <Avatar
+                          // Shown as an initial when the tracker has no
+                          // avatar for the lead, rather than an empty circle.
+                          model={{
+                            name: lead.name,
+                            avatarUrl: lead.avatarUrl || null,
+                          }}
+                          size={AvatarSize.Toast}
+                        />
                         <Text size="small">{lead.name}</Text>
                       </Flex>
                     </MetadataRow>

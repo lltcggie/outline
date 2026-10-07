@@ -44,20 +44,40 @@ function HoverPreviewIssue({
           <CardContent>
             <Flex gap={2} column>
               <Title>
-                <StyledIssueStatusIcon state={state} size={18} />
+                <StyledIssueStatusIcon state={state} url={url} size={18} />
                 <span>
                   <Backticks content={title} />
                   &nbsp;<Text type="tertiary">{id}</Text>
                 </span>
               </Title>
               <Flex align="center" gap={6}>
-                <Avatar src={author.avatarUrl} size={18} />
-                <Info>
-                  <Trans>
-                    {{ authorName }} created{" "}
-                    <Time dateTime={createdAt} addSuffix />
-                  </Trans>
-                </Info>
+                {authorName ? (
+                  <>
+                    <Avatar
+                      // Shown as an initial when the tracker has no avatar
+                      // for the author, rather than an empty circle.
+                      model={{
+                        name: authorName,
+                        avatarUrl: author.avatarUrl || null,
+                      }}
+                      size={18}
+                    />
+                    <Info>
+                      <Trans>
+                        {{ authorName }} created{" "}
+                        <Time dateTime={createdAt} addSuffix />
+                      </Trans>
+                    </Info>
+                  </>
+                ) : (
+                  // Some trackers do not reveal who created an issue, Asana
+                  // only returns the name of the requesting user.
+                  <Info>
+                    <Trans>
+                      Created <Time dateTime={createdAt} addSuffix />
+                    </Trans>
+                  </Info>
+                )}
               </Flex>
               {description && (
                 <Description as="div">

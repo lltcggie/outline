@@ -7,11 +7,10 @@ import type { EmbedDescriptor } from "@shared/editor/embeds";
 import type { MenuItem } from "@shared/editor/types";
 import { MentionDisplay, MentionType } from "@shared/types";
 import { isInternalUrl, isUrl } from "@shared/utils/urls";
-import type Integration from "~/models/Integration";
 import useCurrentUser from "~/hooks/useCurrentUser";
 import useStores from "~/hooks/useStores";
 import { client } from "~/utils/ApiClient";
-import { determineMentionType, isURLMentionable } from "~/utils/mention";
+import { getMentionTypeForURL } from "~/utils/mention";
 import type { Props as SuggestionsMenuProps } from "./SuggestionsMenu";
 import SuggestionsMenu from "./SuggestionsMenu";
 import SuggestionsMenuItem from "./SuggestionsMenuItem";
@@ -111,14 +110,10 @@ function useItems({
     let mentionType: MentionType | undefined;
 
     if (pastedText && isUrl(pastedText)) {
-      const url = new URL(pastedText);
-      const integration = integrations.find((intg: Integration) =>
-        isURLMentionable({ url, integration: intg })
-      );
-
-      mentionType = integration
-        ? determineMentionType({ url, integration })
-        : MentionType.URL;
+      mentionType = getMentionTypeForURL({
+        url: new URL(pastedText),
+        integrations: integrations.orderedData,
+      });
     }
 
     return [
@@ -180,14 +175,10 @@ function useItems({
       return false;
     }
 
-    const url = new URL(text);
-    const integration = integrations.find((intg: Integration) =>
-      isURLMentionable({ url, integration: intg })
-    );
-
-    const mentionType = integration
-      ? determineMentionType({ url, integration })
-      : MentionType.URL;
+    const mentionType = getMentionTypeForURL({
+      url: new URL(text),
+      integrations: integrations.orderedData,
+    });
 
     if (mentionType) {
       linksToMentionType[text] = mentionType;

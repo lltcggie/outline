@@ -1,4 +1,4 @@
-import type { MentionType } from "@shared/types";
+import { MentionType } from "@shared/types";
 import type Integration from "~/models/Integration";
 import { Hook, PluginManager } from "~/utils/PluginManager";
 
@@ -44,3 +44,37 @@ export const determineMentionType = ({
   integration: Integration;
 }): MentionType | undefined =>
   getMentionProvider(integration)?.mentionType(url, integration);
+
+/**
+ * Determines the type of mention a pasted URL is converted to: the type a
+ * workspace integration recognizes, the type of a resource on a service that
+ * members link their own accounts to, or otherwise a plain URL mention.
+ *
+ * @param options the URL and the workspace integrations to check against.
+ * @returns the mention type, or undefined if the URL cannot be mentioned.
+ */
+export const getMentionTypeForURL = ({
+  url,
+  integrations,
+}: {
+  url: URL;
+  integrations: Integration[];
+}): MentionType | undefined => {
+  const integration = integrations.find((candidate) =>
+    isURLMentionable({ url, integration: candidate })
+  );
+  if (integration) {
+    return determineMentionType({ url, integration });
+  }
+
+  // Services that members link their own accounts to have no workspace
+  // integration, the plugin recognizes their URLs instead.
+  for (const provider of PluginManager.getHooks(Hook.UrlMentionProvider)) {
+    const type = provider.value(url);
+    if (type) {
+      return type;
+    }
+  }
+
+  return MentionType.URL;
+};

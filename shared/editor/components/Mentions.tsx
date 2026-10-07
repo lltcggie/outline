@@ -383,7 +383,7 @@ export const MentionIssue = observer((props: ComponentProps) => {
       rel="noopener noreferrer nofollow"
     >
       <Flex align="center" gap={6}>
-        <IssueStatusIcon size={14} state={issue.state} />
+        <IssueStatusIcon size={14} state={issue.state} url={issue.url} />
         <Flex align="center" gap={4}>
           <Text>
             <Backticks content={issue.title} />

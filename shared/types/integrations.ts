@@ -16,6 +16,7 @@ export enum IntegrationType {
 
 /** External services that Outline can integrate with. */
 export enum IntegrationService {
+  Asana = "asana",
   Diagrams = "diagrams",
   Grist = "grist",
   Slack = "slack",

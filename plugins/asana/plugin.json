@@ -1,0 +1,6 @@
+{
+  "id": "asana",
+  "name": "Asana",
+  "priority": 16,
+  "description": "Adds an Asana integration for previewing task and project links with each user's own access."
+}
