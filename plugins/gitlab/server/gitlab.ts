@@ -17,8 +17,31 @@ import type {
   UnfurlSignature,
 } from "@server/types";
 import fetch from "@server/utils/fetch";
+import {
+  destroyLinkedAccounts,
+  findLinkedAccounts,
+  requestWithLinkedAccount,
+} from "@server/utils/linkedAccount";
+import {
+  OAuthTokenError,
+  parseJsonBody,
+  parseOAuthTokenError,
+} from "@server/utils/OAuthTokenError";
 import { GitLabUtils } from "../shared/GitLabUtils";
 import env from "./env";
+
+type GitLabResource = NonNullable<ReturnType<typeof GitLabUtils.parseUrl>>;
+
+/** A request to the GitLab API that the instance answered with an error. */
+export class GitLabRequestError extends Error {
+  constructor(
+    path: string,
+    /** The HTTP status of the response, 401 when the token was rejected. */
+    public status: number
+  ) {
+    super(`Error while requesting ${path} from GitLab; status: ${status}`);
+  }
+}
 
 const AccessTokenResponseSchema = z.object({
   access_token: z.string(),
@@ -306,39 +329,15 @@ export class GitLab {
     }: { teamId: string; userId?: string; customUrl?: string },
     options: { transaction?: Transaction } = {}
   ) {
-    const integrations = (await Integration.findAll({
-      where: {
-        service: IntegrationService.GitLab,
-        type: IntegrationType.LinkedAccount,
-        teamId,
-        ...(userId ? { userId } : {}),
-      },
-      include: this.authenticationInclude,
-      transaction: options.transaction,
-    })) as Integration<IntegrationType.LinkedAccount>[];
+    const integrations = await findLinkedAccounts(
+      IntegrationService.GitLab,
+      { teamId, userId },
+      options
+    );
 
     return integrations.filter((integration) =>
       GitLabUtils.isSameInstance(integration.settings?.gitlab?.url, customUrl)
     );
-  }
-
-  /**
-   * Removes linked accounts together with their stored tokens.
-   *
-   * @param linkedAccounts the linked account integrations to remove.
-   * @param options the query options.
-   */
-  public static async destroyLinkedAccounts(
-    linkedAccounts: Integration<IntegrationType.LinkedAccount>[],
-    options: { transaction?: Transaction } = {}
-  ) {
-    for (const linkedAccount of linkedAccounts) {
-      // Destroying with force also removes the stored token.
-      await linkedAccount.destroy({
-        transaction: options.transaction,
-        force: true,
-      });
-    }
   }
 
   /**
@@ -417,7 +416,7 @@ export class GitLab {
       }
     }
 
-    await this.destroyLinkedAccounts(removed, options);
+    await destroyLinkedAccounts(removed, options);
   }
 
   /**
@@ -470,18 +469,8 @@ export class GitLab {
       this.isConnected(integration)
     );
 
-    let workspaceIntegration: Integration<IntegrationType.Embed> | undefined;
-    let resource: ReturnType<typeof GitLabUtils.parseUrl>;
-
-    for (const integration of workspaceIntegrations) {
-      resource = GitLabUtils.parseUrl(url, integration.settings?.gitlab?.url);
-      if (resource) {
-        workspaceIntegration = integration;
-        break;
-      }
-    }
-
-    if (!resource || !workspaceIntegration) {
+    const match = this.matchResource(url, workspaceIntegrations);
+    if (!match) {
       // Other URLs on a connected instance, such as commits or files, and all
       // URLs on an instance that is still being connected or is only known
       // through GITLAB_URL, are not passed on to later unfurl providers, which
@@ -502,6 +491,7 @@ export class GitLab {
       return;
     }
 
+    const { integration: workspaceIntegration, resource } = match;
     const customUrl = workspaceIntegration.settings?.gitlab?.url;
     const linkedAccount = await this.findLinkedAccount(actor, customUrl);
 
@@ -522,64 +512,39 @@ export class GitLab {
           integration.id === linkedAccount.settings?.gitlab?.integrationId
       ) ?? workspaceIntegration;
 
+    const appAuthentication = appIntegration.authentication;
+
     try {
-      const { authentication } = linkedAccount;
-      const appAuthentication = appIntegration.authentication;
-      const accessToken = await authentication.refreshTokenIfNeeded(
-        async (refreshToken: string) =>
-          GitLab.refreshToken({
+      const outcome = await requestWithLinkedAccount({
+        linkedAccount,
+        actor,
+        refresh: (refreshToken) =>
+          this.refreshToken({
             refreshToken,
             customUrl,
             clientId: appAuthentication?.clientId ?? undefined,
             clientSecret: appAuthentication?.clientSecret ?? undefined,
-          })
-      );
-
-      // Epics are group-scoped, so they have no project path.
-      if (
-        resource.type === UnfurlResourceType.Issue &&
-        resource.scope === "group"
-      ) {
-        const epic = await this.getEpic({
-          accessToken,
-          customUrl,
-          path: resource.owner,
-          id: resource.id,
-        });
-
-        return this.transformIssue(epic);
+          }),
+        isUnauthorized: (err) =>
+          err instanceof GitLabRequestError && err.status === 401,
+        request: (accessToken) =>
+          this.unfurlResource({ accessToken, customUrl }, resource),
+      });
+      if (outcome.removed) {
+        return { error: "GitLab account not linked" };
       }
-
-      const path = `${resource.owner}/${resource.repo}`;
-
-      if (resource.type === UnfurlResourceType.Issue) {
-        const issue = await this.getIssue({
-          accessToken,
-          customUrl,
-          path,
-          id: resource.id,
-        });
-
-        return this.transformIssue(issue);
-      } else if (resource.type === UnfurlResourceType.PR) {
-        const mr = await this.getMergeRequest({
-          accessToken,
-          customUrl,
-          path,
-          id: resource.id,
-        });
-        return this.transformMR(mr);
-      } else if (resource.type === UnfurlResourceType.Project) {
-        const { project, issueStats } = await this.getProject({
-          accessToken,
-          customUrl,
-          path,
-        });
-        return this.transformProject(project, issueStats);
-      }
-
-      return { error: "Resource not found" };
+      return outcome.result;
     } catch (err) {
+      if (err instanceof OAuthTokenError) {
+        // A refresh that GitLab refused for a reason other than a revoked
+        // token is a problem of the OAuth application rather than of the
+        // resource.
+        Logger.error(
+          "GitLab refused to refresh an access token, check the client id and secret of the OAuth application",
+          err
+        );
+        return { error: errToString(err) };
+      }
       Logger.warn("Failed to fetch resource from GitLab", toError(err));
       return {
         error: errToString(err) || "Unknown error",
@@ -649,9 +614,7 @@ export class GitLab {
     });
 
     if (!res.ok) {
-      throw new Error(
-        `Error while requesting ${path} from GitLab; status: ${res.status}`
-      );
+      throw new GitLabRequestError(path, res.status);
     }
 
     // Read the body at once, a body left unread while awaiting other requests
@@ -659,7 +622,19 @@ export class GitLab {
     return { data: schema.parse(await res.json()), headers: res.headers };
   }
 
-  private static async refreshToken({
+  /**
+   * Obtains a new access token with a refresh token. A token can only be
+   * refreshed with the OAuth application that issued it.
+   *
+   * @param params.refreshToken - The refresh token issued with the previous token.
+   * @param params.customUrl - Optional custom GitLab URL. Falls back to default.
+   * @param params.clientId - Optional custom client ID (falls back to env var).
+   * @param params.clientSecret - Optional custom client secret (falls back to env var).
+   * @returns The parsed access token response.
+   * @throws {OAuthTokenError} when GitLab refuses the refresh token, with the
+   * code "invalid_grant" when it was revoked or has expired.
+   */
+  public static async refreshToken({
     refreshToken,
     customUrl,
     clientId,
@@ -693,13 +668,99 @@ export class GitLab {
       body: JSON.stringify(body),
     });
 
-    if (res.status !== 200) {
+    // The body is read as text and kept for the log, a response that is not
+    // an OAuth error nor JSON may be the page of a proxy in front of the
+    // instance, whatever its status.
+    const text = await res.text();
+    const error = parseOAuthTokenError("GitLab", text);
+    if (error) {
+      throw error;
+    }
+    const json = res.status === 200 ? parseJsonBody(text) : undefined;
+    if (json === undefined) {
       throw new Error(
-        `Error while requesting access token from GitLab; status: ${res.status}`
+        `Error while requesting access token from GitLab; status: ${res.status}, ${text}`
       );
     }
 
-    return AccessTokenResponseSchema.parse(await res.json());
+    return AccessTokenResponseSchema.parse(json);
+  }
+
+  /**
+   * Finds the connected instance a URL belongs to and parses the resource it
+   * points at.
+   *
+   * @param url the URL to unfurl.
+   * @param integrations the connected workspace integrations of the team.
+   * @returns the integration of the instance and the parsed resource, or
+   * undefined when the URL is not a resource on a connected instance.
+   */
+  private static matchResource(
+    url: string,
+    integrations: Integration<IntegrationType.Embed>[]
+  ) {
+    for (const integration of integrations) {
+      const resource = GitLabUtils.parseUrl(
+        url,
+        integration.settings?.gitlab?.url
+      );
+      if (resource) {
+        return { integration, resource };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Unfurls a parsed resource with an access token.
+   *
+   * @param params.accessToken the access token of the user.
+   * @param params.customUrl the instance URL, gitlab.com when unset.
+   * @param resource the parsed resource URL.
+   * @returns the resource details.
+   * @throws {GitLabRequestError} when GitLab refuses the request, with status
+   * 401 when the token was rejected.
+   */
+  private static async unfurlResource(
+    params: RequestParams,
+    resource: GitLabResource
+  ) {
+    // Epics are group-scoped, so they have no project path.
+    if (
+      resource.type === UnfurlResourceType.Issue &&
+      resource.scope === "group"
+    ) {
+      const epic = await this.getEpic({
+        ...params,
+        path: resource.owner,
+        id: resource.id,
+      });
+
+      return this.transformIssue(epic);
+    }
+
+    const path = `${resource.owner}/${resource.repo}`;
+
+    if (resource.type === UnfurlResourceType.Issue) {
+      const issue = await this.getIssue({ ...params, path, id: resource.id });
+
+      return this.transformIssue(issue);
+    } else if (resource.type === UnfurlResourceType.PR) {
+      const mr = await this.getMergeRequest({
+        ...params,
+        path,
+        id: resource.id,
+      });
+      return this.transformMR(mr);
+    } else if (resource.type === UnfurlResourceType.Project) {
+      const { project, issueStats } = await this.getProject({
+        ...params,
+        path,
+      });
+      return this.transformProject(project, issueStats);
+    }
+
+    return { error: "Resource not found" };
   }
 
   private static transformIssue(issue: Issue | Epic) {

@@ -1,14 +1,12 @@
 import type { Endpoints } from "@octokit/types";
 import type { components } from "@octokit/openapi-webhooks-types";
 import type { IssueSource } from "@shared/schema";
-import { IntegrationService, IntegrationType } from "@shared/types";
+import { IntegrationService, type IntegrationType } from "@shared/types";
 import Logger from "@server/logging/Logger";
 import { Integration, IntegrationAuthentication } from "@server/models";
 import { sequelize } from "@server/storage/database";
-import { afterCommit } from "@server/storage/transaction";
 import { BaseIssueProvider } from "@server/utils/BaseIssueProvider";
-import { CacheHelper } from "@server/utils/CacheHelper";
-import { RedisPrefixHelper } from "@server/utils/RedisPrefixHelper";
+import { removeLinkedAccounts } from "@server/utils/linkedAccount";
 import { GitHub } from "./github";
 
 type GithubAppAuthorizationRevokedEvent =
@@ -92,7 +90,7 @@ export class GitHubIssueProvider extends BaseIssueProvider {
 
       case "github_app_authorization": {
         if (action === "revoked") {
-          await this.destroyLinkedAccounts(
+          await this.handleAuthorizationRevokedEvent(
             payload as unknown as GithubAppAuthorizationRevokedEvent
           );
         }
@@ -111,7 +109,7 @@ export class GitHubIssueProvider extends BaseIssueProvider {
    *
    * @param event the webhook payload.
    */
-  private async destroyLinkedAccounts(
+  private async handleAuthorizationRevokedEvent(
     event: GithubAppAuthorizationRevokedEvent
   ) {
     const githubUserId = event.sender?.id;
@@ -120,33 +118,9 @@ export class GitHubIssueProvider extends BaseIssueProvider {
       return;
     }
 
-    await sequelize.transaction(async (transaction) => {
-      const linkedAccounts = await Integration.findAll<
-        Integration<IntegrationType.LinkedAccount>
-      >({
-        where: {
-          service: IntegrationService.GitHub,
-          type: IntegrationType.LinkedAccount,
-          "settings.github.account.id": githubUserId,
-        },
-        lock: transaction.LOCK.UPDATE,
-        transaction,
-      });
-
-      await GitHub.destroyLinkedAccounts(linkedAccounts, { transaction });
-
-      await afterCommit(transaction, async () => {
-        await Promise.all(
-          linkedAccounts.map((linkedAccount) =>
-            CacheHelper.clearData(
-              RedisPrefixHelper.getUnfurlPrefix(
-                linkedAccount.teamId,
-                linkedAccount.userId
-              )
-            )
-          )
-        );
-      });
+    await removeLinkedAccounts({
+      service: IntegrationService.GitHub,
+      "settings.github.account.id": githubUserId,
     });
   }
 

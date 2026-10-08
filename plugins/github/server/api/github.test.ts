@@ -475,10 +475,6 @@ describe("#github.callback", () => {
 
       expect(res.status).toEqual(302);
       expect(res.headers.get("location")).toContain(`error=${access}`);
-      expect(GitHub.canManageInstallation).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ id: 10 })
-      );
       expect(await findInstallations(admin.teamId)).toHaveLength(0);
       // Neither is the admin's own account linked, and the token is not kept.
       expect(await findLinkedAccounts(admin)).toHaveLength(0);

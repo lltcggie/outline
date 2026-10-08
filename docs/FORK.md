@@ -13,6 +13,7 @@ GitLab連携のリンクプレビュー（展開・メンション）が、各�
 - 取得結果は外部メンション（Issue・マージリクエスト・プロジェクト・URL）に保存されない。保存済みのデータはサーバー側の保存時にも除去される。
 - 展開キャッシュはユーザー単位になっている。Iframelyなど結果が全員同じプロバイダーだけがチーム内で共有される。
 - 設定済みのGitLabインスタンスのURLは、本人が連携していない場合や解釈できないURLでも、Iframelyなど後続の展開プロバイダーに渡されない。
+- アクセストークン（GitLabの既定では2時間期限）は、連携したワークスペース連携のOAuthアプリケーションでリフレッシュトークンから自動更新される。本人がGitLab側でアプリケーションの認可を取り消すと、次にプレビューを取得したときにGitLabがトークンを拒否（401）し、リフレッシュも `invalid_grant` で拒否されるので、連携は自動的に解除される（ログに `gitlab access of user … was revoked` が出る）。設定 → GitLab を開き直すと「Connect」に戻っているので、連携し直す。この回復処理はGitHub・Asana連携と共通（後述の「注意事項」）。
 - `EDITOR_VERSION` のメジャー番号を上げている（17 → 18）。取得結果を保存する旧クライアントは共同編集サーバーから拒否され、再読み込みを促される。
 
 ### 環境変数
@@ -55,6 +56,8 @@ OAuthアプリケーションのスコープ（`read_api read_user`）とコー�
 - 移行前に送信済みのWebhookやメールに含まれた内容は回収できない。
 - Linear連携は引き続きワークスペース共有のトークンで取得する。閲覧権限の分離が必要な場合は、この連携を有効にしないこと。GitHub連携とAsana連携（いずれも後述）はユーザー単位で取得する。
 - Iframelyを使わない場合は `IFRAMELY_API_KEY` / `IFRAMELY_URL` を設定しないこと。
+- トークンが401で拒否されたときの回復（連携行と認証行をこの順にロックして再リフレッシュ → 同時に別のリクエストが更新済みならそのトークンを使う → リフレッシュも拒否されたら連携を削除して再連携を促す）は、GitLab・GitHub・Asana連携で共通の `server/utils/linkedAccount.ts` の `requestWithLinkedAccount` が行う。各プラグインの `unfurl` は、リフレッシュ関数と「401か」「失効か」の判定だけを渡す（失効の既定は RFC 6749 の `invalid_grant`、GitHubだけ `bad_refresh_token`）。トークンエンドポイントへの要求自体はサービスごとに違いがある（GitHubはエラーを200で返す）ので共通化していないが、その拒否は共通の `server/utils/OAuthTokenError.ts` の `OAuthTokenError`（OAuthのエラーコードを持つ）で表す。連携の追加・削除後にユーザーまたはチームの展開キャッシュをコミット後に消す処理（失敗は警告ログのみ）も、3連携で共通の `server/utils/unfurlCache.ts` の `clearUnfurlCacheAfterCommit` が行う。OAuthコールバックで連携を保存する処理（既存の連携があれば連携行 → 認証行の順に更新、認証の無い連携は作り直す）も `server/utils/linkedAccount.ts` の `saveLinkedAccount` にまとめてあり、回復処理とロックの順序が食い違ってデッドロックしないよう、各プラグインはこれを使う（重複チェックやワークスペース単位のロックは各プラグイン側）。サービス側で削除・認可取り消しされたユーザーの連携をWebhook（GitLabの `user_destroy`・GitHubの `github_app_authorization`）でまとめて削除する処理も、同ファイルの `removeLinkedAccounts`（連携行をロックして削除し、コミット後にその利用者の展開キャッシュを消す）にまとめてある。ユーザーが連携したアカウントの検索（サービス・チーム・任意でユーザーで絞り、認証行を外部結合）も同ファイルの `findLinkedAccounts` にまとめてあり、各プラグインの `findLinkedAccounts` / `findLinkedAccount` はこれを呼んでから自分の条件（GitLabはインスタンス、Asanaは認証行の有無）で絞る。トークンエンドポイントの応答本文は `OAuthTokenError.ts` の `parseJsonBody` で読み、JSONでない応答（手前のプロキシのページなど）はステータスが200でもステータスと本文を含むエラーにする。上流由来のFigma・Linear連携はこれらの処理を使わない。
+- 連携が自動解除されるのは、GitLabのトークンエンドポイントがリフレッシュを `invalid_grant`（リフレッシュトークンの失効・取り消し）で拒否したときだけ。ワークスペース連携のクライアントシークレットの誤りは `invalid_client` で拒否されるため連携は保持され、ログに `GitLab refused to refresh an access token, check the client id and secret of the OAuth application` がerrorで出る。
 - 上流をマージするとき、上流が `shared/editor/version.ts` の `EDITOR_VERSION` を上げていたら、こちらのメジャー番号が上流より大きくなるよう調整すること。
 
 ## GitHub連携のプレビューをユーザー個人の権限で取得する
@@ -68,7 +71,7 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 - 1つのGitHubアカウントはワークスペース内で1人だけが連携できる（GitLab連携と同じ。2人目は `duplicate_account` で拒否される。Asana連携は複数人で連携できる）。
 - 展開キャッシュはユーザー単位。github.com のURLは、ワークスペースにAppのインストールが1つでもあるか本人が連携済みなら、本人が連携していない場合やコミット・ファイルなど解釈できないURLでも、Iframelyなど後続の展開プロバイダーに渡さない。どちらも無いワークスペースでは上流どおり後続に渡す。
 - Appが「Expire user authorization tokens」（既定で有効）で発行する8時間期限のトークンは、リフレッシュトークンで自動更新される。期限の無いトークンのAppでもそのまま使える。
-- 本人がGitHub側でAppの認可を取り消すと、次にプレビューを取得したときにGitHubがトークンを拒否（401）し、リフレッシュも `bad_refresh_token` で拒否されるので、連携は自動的に解除される（ログに `GitHub access of user … was revoked` が出る）。GitHubが送る `github_app_authorization` Webhook（Appは自動的に受信する）でも、その時点で解除される。設定 → GitHub を開き直すと「Connect」に戻っているので、連携し直す。
+- 本人がGitHub側でAppの認可を取り消すと、次にプレビューを取得したときにGitHubがトークンを拒否（401）し、リフレッシュも `bad_refresh_token` で拒否されるので、連携は自動的に解除される（ログに `github access of user … was revoked` が出る）。この回復処理はGitLab・Asana連携と共通の `server/utils/linkedAccount.ts`（GitLab連携の「注意事項」参照）で、GitHubはリフレッシュトークンを使い捨てにするため、同時に回復した別のリクエストが更新済みならそのトークンを使う。GitHubが送る `github_app_authorization` Webhook（Appは自動的に受信する）でも、その時点で解除される。設定 → GitHub を開き直すと「Connect」に戻っているので、連携し直す。
 - 設定 → GitHub で連携を解除すると、保存していたトークンをGitHub側でも失効させる（失敗しても警告ログのみ）。連携のやり直しで置き換えられたトークンや、重複アカウント・インストールの不一致・保存の失敗で保存されなかったトークンも同じように失効させる。管理者がインストールを解除すると、上流と同じくAppをその組織からアンインストールするが、各ユーザーの連携は残る（トークンはAppのもので、インストールのものではない）。
 - 設定画面はメンバー全員に表示される（`GITHUB_CLIENT_ID` が未設定のときは管理者のみ）。
 - `issueSources`（インストールから到達できるリポジトリの一覧）は上流どおりインストール認証で取得・保存するが、プレビューには使わない。
@@ -165,7 +168,7 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 - 表示文言（「担当」「期限」「完了」など）は閲覧者の言語設定で翻訳される。別リポジトリ版は日本語の直書きだった。
 - 貼り付けメニューの「メンション」は、連携の有無にかかわらず `ASANA_CLIENT_ID` が設定されていればタスク・プロジェクトのURLをIssue型・Project型にする。クライアントの `PluginManager` に `Hook.MentionProvider` を追加し、`plugins/asana/client/index.tsx` が登録したものを `app/utils/mention.ts` の `getMentionTypeForURL` が参照する。Markdown・API・MCPで作られたメンションはサーバー側の `MentionProvider` で型が決まる。
 - 展開キャッシュはユーザー単位。`app.asana.com` のURLは、本人が連携していない場合や、受信トレイ・検索など解釈できないURLでも、Iframelyなど後続の展開プロバイダーに渡さない。`http://` で貼られたリンクも同じタスク・プロジェクトとして扱う（Asanaがhttpsにリダイレクトするため）。
-- アクセストークンは1時間で期限切れになり、リフレッシュトークンで自動更新される。Asana側でアプリの認可を取り消すと、次にプレビューを取得したときにAsanaがトークンを拒否（401）し、リフレッシュも拒否されるので、連携は自動的に解除される（ログに `Asana access of user … was revoked` が出る）。設定 → Asana を開き直すと「Connect」に戻っているので、連携し直す。
+- アクセストークンは1時間で期限切れになり、リフレッシュトークンで自動更新される。Asana側でアプリの認可を取り消すと、次にプレビューを取得したときにAsanaがトークンを拒否（401）し、リフレッシュも拒否されるので、連携は自動的に解除される（ログに `asana access of user … was revoked` が出る）。この回復処理はGitLab・GitHub連携と共通の `server/utils/linkedAccount.ts`（GitLab連携の「注意事項」参照）。設定 → Asana を開き直すと「Connect」に戻っているので、連携し直す。
 - プロジェクトの完了タスクの割合は `task_counts` エンドポイントで取得する。このエンドポイントは他より厳しいレート制限が掛かるため、取得できなかったときは割合だけを省いてプロジェクトを表示する。
 - 本体側の変更: `IntegrationService.Asana` の追加、`IssueTrackerIntegrationService` へのAsanaの追加とタスク用のステータスアイコン（`shared/components/IssueStatusIcon/AsanaIssueStatusIcon.tsx`）、展開結果のURLからサービスを判定する `shared/utils/integrations.ts`（メンションとホバープレビューで重複していた判定をまとめた）、LinkedAccount型の `presentSettings` へのAsanaアカウントの追加。環境変数は本体の `Environment` クラスで検証する。別リポジトリ版にあった起動ログの独自出力、data URIのアイコン、独自の環境変数パーサーは不要になった。
 
@@ -214,7 +217,7 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 - タスクの作成者名は、Asana APIが本人以外の作成者名を返さない場合は取れない。そのときホバーには作成者なしで「作成 〜前」とだけ表示される（`app/components/HoverPreview/HoverPreviewIssue.tsx` を変更）。
 - 上流をマージするとき、`shared/types.ts`（`IntegrationService.Asana`・`IssueTrackerIntegrationService`・LinkedAccount型の設定）、`server/models/Integration.ts` の `presentSettings`、`shared/components/IssueStatusIcon/index.tsx`、`shared/utils/integrations.ts` とその呼び出し元（`shared/editor/components/Mentions.tsx`・`app/components/HoverPreview/HoverPreviewIssue.tsx`）、`app/utils/PluginManager.ts` の `Hook.MentionProvider`、`app/utils/mention.ts` の `getMentionTypeForURL` とその呼び出し元（`app/editor/components/PasteMenu.tsx`）に差分があれば、Asana分を保つように解決する。
 - 上流が `UnfurlResponse` のIssue型・Project型の項目を変えたら、`plugins/asana/server/asana.ts` の `unfurlTask`・`unfurlProject` を合わせる（`satisfies` で `yarn tsc` が止まる）。
-- 連携が自動解除されるのは、Asanaのトークンエンドポイントがリフレッシュを `invalid_grant`（リフレッシュトークンの失効・取り消し）で拒否したときだけ。`ASANA_CLIENT_SECRET` の誤りやローテーション漏れは `invalid_client` で拒否されるため連携は保持され、ログに `Asana refused to refresh an access token, check ASANA_CLIENT_ID and ASANA_CLIENT_SECRET` がerrorで出る。アクセストークンは1時間で切れるので、シークレットを替えたら環境変数も同時に更新すること。
+- 連携が自動解除されるのは、Asanaのトークンエンドポイントがリフレッシュを `invalid_grant`（リフレッシュトークンの失効・取り消し。共通の回復処理の既定の判定）で拒否したときだけ。`ASANA_CLIENT_SECRET` の誤りやローテーション漏れは `invalid_client` で拒否されるため連携は保持され、ログに `Asana refused to refresh an access token, check ASANA_CLIENT_ID and ASANA_CLIENT_SECRET` がerrorで出る。アクセストークンは1時間で切れるので、シークレットを替えたら環境変数も同時に更新すること。
 - OAuthアプリケーションや `ASANA_OAUTH_SCOPES` に必要なスコープが無いと、Asanaは403で `The following scopes must be present …` を返す。このときはログに `Asana refused the request for a missing OAuth scope` がwarnで出る（本人に見えないタスク・プロジェクトの403・404はdebugのみ）。Asanaが既存のエンドポイントにスコープ要件を追加したときもこの形で現れる。
 
 ### 開発・テスト
