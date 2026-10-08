@@ -149,6 +149,9 @@ export type IntegrationSettings<T> = T extends IntegrationType.Embed
                     avatarUrl: string;
                   };
                 };
+                github?: {
+                  account: { id: number; name: string; avatarUrl: string };
+                };
                 gitlab?: {
                   /** The self-managed instance URL, gitlab.com when unset. */
                   url?: string;

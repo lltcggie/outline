@@ -17,15 +17,60 @@ class IntegrationsStore extends Store<Integration> {
     );
   }
 
+  /**
+   * Fetches the integrations of a service and takes those the server no
+   * longer returns out of the store. Fetching only ever adds to the store, so
+   * an integration removed without the client being told, such as a linked
+   * account that the server removes when the user revokes the application in
+   * the service, would otherwise still be shown as connected.
+   *
+   * @param service the service whose integrations are fetched.
+   * @param params further parameters of the request, such as withRelations.
+   * They must not narrow the result, such as to a type, as every integration
+   * of the service that is not returned is taken out of the store.
+   * @returns the integrations of the service.
+   */
+  fetchService = async (
+    service: IntegrationService,
+    params?: Record<string, unknown>
+  ) => {
+    const results = await this.fetchAll({ ...params, service });
+    const ids = new Set(results.map((integration) => integration.id));
+    this.removeAll(
+      (integration) =>
+        integration.service === service && !ids.has(integration.id)
+    );
+    return results;
+  };
+
   @override
   get orderedData(): Integration[] {
     return naturalSort(Array.from(this.data.values()), "name");
   }
 
+  /**
+   * The workspace integrations that record an installation of the GitHub app
+   * on an organization or account, which admins add so that the app can
+   * reach its repositories.
+   */
   @computed
   get github(): Integration<IntegrationType.Embed>[] {
     return this.orderedData.filter(
-      (integration) => integration.service === IntegrationService.GitHub
+      (integration) =>
+        integration.service === IntegrationService.GitHub &&
+        integration.type === IntegrationType.Embed
+    );
+  }
+
+  /** The GitHub account linked by the current user, if any. */
+  @computed
+  get githubLinkedAccount():
+    | Integration<IntegrationType.LinkedAccount>
+    | undefined {
+    return this.orderedData.find(
+      (integration) =>
+        integration.service === IntegrationService.GitHub &&
+        integration.type === IntegrationType.LinkedAccount
     );
   }
 
