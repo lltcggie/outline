@@ -149,6 +149,7 @@ class Integration<T = unknown> extends ParanoidModel<
         return {
           asana: settings?.asana,
           figma: settings?.figma,
+          github: settings?.github,
           gitlab: settings?.gitlab,
         };
       }

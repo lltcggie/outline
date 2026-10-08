@@ -28,20 +28,8 @@ function Asana() {
 
   // Always fetched afresh, as the account is removed on the server when the
   // user revokes the application in Asana, which the client is not told about.
-  // Fetching only adds to the store, so an account that is gone is taken out
-  // of it here, or it would still be shown as connected.
   React.useEffect(() => {
-    void integrations
-      .fetchAll({ service: IntegrationService.Asana })
-      .then((results) => {
-        const ids = new Set(results.map((integration) => integration.id));
-        integrations.removeAll(
-          (integration) =>
-            integration.service === IntegrationService.Asana &&
-            integration.type === IntegrationType.LinkedAccount &&
-            !ids.has(integration.id)
-        );
-      });
+    void integrations.fetchService(IntegrationService.Asana);
   }, [integrations]);
 
   const linkedAccount = integrations.orderedData.find(

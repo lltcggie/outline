@@ -33,13 +33,8 @@ if (enabled) {
     },
     {
       type: Hook.UnfurlProvider,
-      value: {
-        unfurl: GitHub.unfurl,
-        cacheExpiry: Minute.seconds,
-        // Resources are fetched with the workspace's installation, so the
-        // result is the same for every member.
-        cacheScope: "team",
-      },
+      // Cached per user, as resources are fetched with the user's own account.
+      value: { unfurl: GitHub.unfurl, cacheExpiry: Minute.seconds },
     },
     {
       type: Hook.MentionProvider,
