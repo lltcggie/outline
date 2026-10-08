@@ -1,19 +1,12 @@
-import { addSeconds } from "date-fns";
 import { truncate } from "es-toolkit/compat";
 import { t } from "i18next";
 import type { Transaction } from "sequelize";
 import { z } from "zod";
-import {
-  IntegrationService,
-  IntegrationType,
-  UnfurlResourceType,
-} from "@shared/types";
+import { IntegrationService, UnfurlResourceType } from "@shared/types";
 import { parseISODate } from "@shared/utils/date";
 import { errToString, toError } from "@shared/utils/error";
-import { createContext } from "@server/context";
 import Logger from "@server/logging/Logger";
 import type { User } from "@server/models";
-import { Integration, IntegrationAuthentication } from "@server/models";
 import type {
   UnfurlIssueOrPR,
   UnfurlProject,
@@ -21,6 +14,14 @@ import type {
 } from "@server/types";
 import fetch from "@server/utils/fetch";
 import { opts } from "@server/utils/i18n";
+import {
+  findLinkedAccounts,
+  requestWithLinkedAccount,
+} from "@server/utils/linkedAccount";
+import {
+  OAuthTokenError,
+  parseOAuthTokenError,
+} from "@server/utils/OAuthTokenError";
 import type { AsanaResource } from "../shared/AsanaUtils";
 import { AsanaUtils } from "../shared/AsanaUtils";
 import env from "./env";
@@ -107,30 +108,17 @@ const TaskCountsSchema = z.object({
   num_completed_tasks: z.number(),
 });
 
-// The body of an error from the OAuth token endpoint, see RFC 6749 §5.2.
-const TokenErrorSchema = z.object({
-  error: z.string(),
-  error_description: z.string().optional(),
-});
-
 // The body of an error from the API, see
 // https://developers.asana.com/docs/errors
 const ApiErrorSchema = z.object({
   errors: z.array(z.object({ message: z.string() })),
 });
 
-type LinkedAccount = Integration<IntegrationType.LinkedAccount>;
-
 /** An error response from Asana, with the status Asana responded with. */
 export class AsanaApiError extends Error {
   constructor(
     public status: number,
-    detail?: string,
-    /**
-     * The OAuth error code of a token endpoint response, such as
-     * "invalid_grant" when the refresh token was revoked.
-     */
-    public code?: string
+    detail?: string
   ) {
     super(
       `Asana responded with status ${status}${detail ? `: ${detail}` : ""}`
@@ -285,22 +273,16 @@ export class Asana {
       requireAuthentication = true,
     }: { transaction?: Transaction; requireAuthentication?: boolean } = {}
   ) {
-    return Integration.findOne<LinkedAccount>({
-      where: {
-        service: IntegrationService.Asana,
-        type: IntegrationType.LinkedAccount,
-        teamId: user.teamId,
-        userId: user.id,
-      },
-      include: [
-        {
-          model: IntegrationAuthentication,
-          as: "authentication",
-          required: requireAuthentication,
-        },
-      ],
-      transaction,
-    });
+    const integrations = await findLinkedAccounts(
+      IntegrationService.Asana,
+      { teamId: user.teamId, userId: user.id },
+      { transaction }
+    );
+    return (
+      integrations.find(
+        (integration) => !requireAuthentication || integration.authentication
+      ) ?? null
+    );
   }
 
   /**
@@ -337,26 +319,19 @@ export class Asana {
     }
 
     try {
-      const token = await linkedAccount.authentication.refreshTokenIfNeeded(
-        (refreshToken) => this.refreshToken(refreshToken)
-      );
-
-      try {
-        return await this.unfurlResource(url, token, resource, actor);
-      } catch (err) {
-        if (!(err instanceof AsanaApiError) || err.status !== 401) {
-          throw err;
-        }
-
-        // The token was rejected although it should still be valid, which
-        // happens when the user revokes the application in Asana, or when a
-        // refresh above failed and the expired token was kept.
-        const recovered = await this.recoverAccess(linkedAccount, actor);
-        if (!recovered) {
-          return { error: "Asana account not linked" };
-        }
-        return await this.unfurlResource(url, recovered, resource, actor);
+      // Asana reports a revoked refresh token as "invalid_grant", the default.
+      const outcome = await requestWithLinkedAccount({
+        linkedAccount,
+        actor,
+        refresh: (refreshToken) => this.refreshToken(refreshToken),
+        isUnauthorized: (err) =>
+          err instanceof AsanaApiError && err.status === 401,
+        request: (token) => this.unfurlResource(url, token, resource, actor),
+      });
+      if (outcome.removed) {
+        return { error: "Asana account not linked" };
       }
+      return outcome.result;
     } catch (err) {
       if (
         err instanceof AsanaApiError &&
@@ -380,10 +355,10 @@ export class Asana {
         return { error: "Resource not found" };
       }
 
-      // Only the token endpoint reports an OAuth error code, so this is a
-      // refresh that Asana refused for a reason other than a revoked token,
-      // which is a problem of the installation rather than of the resource.
-      if (err instanceof AsanaApiError && err.code) {
+      // A refresh that Asana refused for a reason other than a revoked token,
+      // such as "invalid_client", is a problem of the installation rather than
+      // of the resource.
+      if (err instanceof OAuthTokenError) {
         Logger.error(
           "Asana refused to refresh an access token, check ASANA_CLIENT_ID and ASANA_CLIENT_SECRET",
           err
@@ -396,85 +371,12 @@ export class Asana {
     }
   };
 
-  /**
-   * Refreshes the access token of a linked account after Asana rejected it.
-   * When Asana also rejects the refresh token itself the user has revoked the
-   * application, so the linked account is removed and the user is asked to
-   * connect again in their settings. A refresh that Asana refuses for any
-   * other reason, such as wrong application credentials, is a problem of the
-   * installation and leaves the account in place.
-   *
-   * @param linkedAccount the linked account whose token was rejected.
-   * @param actor the user the account belongs to.
-   * @returns the new access token, or undefined when the account was removed.
-   * @throws {Error} when the refresh fails for another reason, such as a
-   * network error or a misconfigured OAuth application.
-   */
-  private static async recoverAccess(
-    linkedAccount: LinkedAccount,
-    actor: User
-  ): Promise<string | undefined> {
-    const { authentication } = linkedAccount;
-
-    // A refresh token is always issued when linking, without one the access
-    // cannot be restored and the user has to connect again.
-    if (!authentication.refreshToken) {
-      return this.removeRevokedAccount(linkedAccount, actor);
-    }
-
-    try {
-      const refreshed = await this.refreshToken(authentication.refreshToken);
-      await authentication.update({
-        token: refreshed.access_token,
-        refreshToken: refreshed.refresh_token || authentication.refreshToken,
-        expiresAt: addSeconds(Date.now(), refreshed.expires_in),
-      });
-      return refreshed.access_token;
-    } catch (err) {
-      if (!(err instanceof AsanaApiError)) {
-        throw err;
-      }
-
-      // Only "invalid_grant" means the refresh token is no longer valid. A
-      // wrong client id or secret is refused with the same status but as
-      // "invalid_client" or "invalid_request", which must not remove the
-      // accounts of every user in the installation. Such a refusal is
-      // reported by unfurl, which logs every failure once.
-      if (err.code === "invalid_grant") {
-        return this.removeRevokedAccount(linkedAccount, actor);
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Removes a linked account whose access was revoked in Asana, the same way
-   * as when the user disconnects it in their settings: the integration is
-   * deleted with an event, and the processor of that event clears the
-   * previews fetched with the account and removes its stored tokens.
-   *
-   * @param linkedAccount the linked account to remove.
-   * @param actor the user the account belongs to.
-   * @returns undefined, as there is no access token to continue with.
-   */
-  private static async removeRevokedAccount(
-    linkedAccount: LinkedAccount,
-    actor: User
-  ): Promise<undefined> {
-    Logger.info(
-      "plugins",
-      `Asana access of user ${actor.id} was revoked, removing the linked account`
-    );
-    await linkedAccount.destroyWithCtx(createContext({ user: actor }));
-    return undefined;
-  }
-
   private static unfurlResource(
     url: string,
     token: string,
     resource: AsanaResource,
     actor: User
-  ) {
+  ): Promise<UnfurlIssueOrPR | UnfurlProject> {
     return resource.type === "task"
       ? this.unfurlTask(url, token, resource, actor)
       : this.unfurlProject(url, token, resource, actor);
@@ -665,8 +567,10 @@ export class Asana {
    * @param params the grant parameters, such as the code or refresh token.
    * @param schema the schema of the expected response.
    * @returns the parsed response.
-   * @throws {AsanaApiError} when Asana does not issue a token, with status 400
-   * or 401 when the code or refresh token is no longer valid.
+   * @throws {OAuthTokenError} when Asana refuses the grant, with the code
+   * "invalid_grant" when the code or refresh token is no longer valid.
+   * @throws {AsanaApiError} when Asana does not issue a token for another
+   * reason.
    */
   private static async tokenRequest<T>(
     params: Record<string, string>,
@@ -689,10 +593,12 @@ export class Asana {
 
     if (res.status !== 200) {
       const body = await res.text();
-      throw new AsanaApiError(
-        res.status,
-        `error requesting ${params.grant_type} token, ${body}`,
-        this.parseJson(body, TokenErrorSchema)?.error
+      throw (
+        parseOAuthTokenError("Asana", body) ??
+        new AsanaApiError(
+          res.status,
+          `error requesting ${params.grant_type} token, ${body}`
+        )
       );
     }
 

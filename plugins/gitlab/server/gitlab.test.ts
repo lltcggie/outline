@@ -1,10 +1,15 @@
 // @vitest-isolate true
+import { GitbeakerRequestError } from "@gitbeaker/rest";
+import { http, HttpResponse } from "msw";
 import { IntegrationService, IntegrationType } from "@shared/types";
+import Logger from "@server/logging/Logger";
 import { Integration, IntegrationAuthentication } from "@server/models";
 import type { User } from "@server/models";
 import { buildAdmin, buildUser } from "@server/test/factories";
 import { sequelize } from "@server/storage/database";
+import { server as msw } from "@server/test/msw";
 import { getTestServer } from "@server/test/support";
+import { OAuthTokenError } from "@server/utils/OAuthTokenError";
 import Iframely from "plugins/iframely/server/iframely";
 import { GitLabIssueProvider } from "./GitLabIssueProvider";
 import env from "./env";
@@ -14,6 +19,7 @@ import { uninstall } from "./uninstall";
 const server = getTestServer();
 const gitlabUrl = "https://gitlab.example.com";
 const issueUrl = `${gitlabUrl}/secret/p/-/issues/1`;
+const tokenUrl = `${gitlabUrl}/oauth/token`;
 
 const issue = {
   iid: 1,
@@ -25,6 +31,31 @@ const issue = {
   author: { username: "a", avatar_url: "" },
   created_at: new Date().toISOString(),
 } as unknown as Awaited<ReturnType<typeof GitLab.getIssue>>;
+
+const refreshed = {
+  access_token: "refreshed-token",
+  token_type: "Bearer",
+  expires_in: 7200,
+  refresh_token: "next-refresh-token",
+  scope: "read_api read_user",
+  created_at: 1_700_000_000,
+};
+
+/**
+ * Creates an error as GitLab's client reports a refused request.
+ *
+ * @param status the status GitLab responded with.
+ * @returns the error.
+ */
+function requestError(status: number) {
+  return new GitbeakerRequestError(`GitLab responded with ${status}`, {
+    cause: {
+      description: `GitLab responded with ${status}`,
+      request: new Request(`${gitlabUrl}/api/v4/x`),
+      response: new Response(null, { status }),
+    },
+  });
+}
 
 /**
  * Creates a workspace integration for a self-managed instance.
@@ -71,9 +102,8 @@ async function buildLinkedAccount(
     userId: user.id,
     teamId: user.teamId,
     token: `token-${user.id}`,
-    ...(options.expired
-      ? { refreshToken: "refresh-token", expiresAt: new Date(0) }
-      : {}),
+    refreshToken: `refresh-${user.id}`,
+    expiresAt: options.expired ? new Date(0) : new Date(Date.now() + 3600_000),
   });
   return Integration.create<Integration<IntegrationType.LinkedAccount>>({
     service: IntegrationService.GitLab,
@@ -173,20 +203,8 @@ describe("GitLab.unfurl", () => {
         expired: true,
       });
       const refreshToken = vi
-        .spyOn(
-          GitLab as unknown as {
-            refreshToken: (params: {
-              clientId?: string;
-              clientSecret?: string;
-            }) => Promise<unknown>;
-          },
-          "refreshToken"
-        )
-        .mockResolvedValue({
-          access_token: "refreshed-token",
-          refresh_token: "refresh-token",
-          expires_in: 3600,
-        });
+        .spyOn(GitLab, "refreshToken")
+        .mockResolvedValue(refreshed);
       const getIssue = vi.spyOn(GitLab, "getIssue").mockResolvedValue(issue);
 
       await GitLab.unfurl(issueUrl, admin);
@@ -194,6 +212,7 @@ describe("GitLab.unfurl", () => {
       const clientId = index === 0 ? "client-a" : "client-b";
       expect(refreshToken).toHaveBeenCalledWith(
         expect.objectContaining({
+          refreshToken: `refresh-${admin.id}`,
           clientId,
           clientSecret: `${clientId}-secret`,
         })
@@ -210,10 +229,90 @@ describe("GitLab.unfurl", () => {
   it("should return an error when GitLab denies access", async () => {
     const admin = await buildAdmin();
     await buildWorkspaceIntegration(admin);
-    await buildLinkedAccount(admin);
-    vi.spyOn(GitLab, "getIssue").mockRejectedValue(new Error("404 Not Found"));
+    const linked = await buildLinkedAccount(admin);
+    vi.spyOn(GitLab, "getIssue").mockRejectedValue(requestError(404));
+    const refreshToken = vi.spyOn(GitLab, "refreshToken");
 
     expect(await GitLab.unfurl(issueUrl, admin)).toHaveProperty("error");
+    expect(refreshToken).not.toHaveBeenCalled();
+    expect(await Integration.findByPk(linked.id)).not.toBe(null);
+  });
+
+  // The recovery itself is shared with the other integrations and tested
+  // with server/utils/linkedAccount.ts, these check what GitLab passes to it.
+  it("should refresh the token and retry when GitLab rejects it", async () => {
+    const admin = await buildAdmin();
+    await buildWorkspaceIntegration(admin, "client-a");
+    const linked = await buildLinkedAccount(admin);
+    const refreshToken = vi
+      .spyOn(GitLab, "refreshToken")
+      .mockResolvedValue(refreshed);
+    const getIssue = vi
+      .spyOn(GitLab, "getIssue")
+      .mockRejectedValueOnce(requestError(401))
+      .mockResolvedValueOnce(issue);
+
+    const result = await GitLab.unfurl(issueUrl, admin);
+
+    expect(result).toMatchObject({ title: "Secret issue" });
+    // The refresh goes through the application the account was linked with.
+    expect(refreshToken).toHaveBeenCalledExactlyOnceWith({
+      refreshToken: `refresh-${admin.id}`,
+      customUrl: gitlabUrl,
+      clientId: "client-a",
+      clientSecret: "client-a-secret",
+    });
+    expect(getIssue).toHaveBeenLastCalledWith(
+      "refreshed-token",
+      "secret/p",
+      1,
+      gitlabUrl
+    );
+    const authentication = await IntegrationAuthentication.findByPk(
+      linked.authenticationId,
+      { rejectOnEmpty: true }
+    );
+    expect(authentication.token).toEqual("refreshed-token");
+    expect(authentication.refreshToken).toEqual("next-refresh-token");
+  });
+
+  it("should remove the linked account when the user revoked the application", async () => {
+    const admin = await buildAdmin();
+    await buildWorkspaceIntegration(admin);
+    const linked = await buildLinkedAccount(admin);
+    // GitLab reports a revoked refresh token with the "invalid_grant" of RFC
+    // 6749, which the shared recovery recognizes by itself.
+    vi.spyOn(GitLab, "refreshToken").mockRejectedValue(
+      new OAuthTokenError("GitLab", "invalid_grant")
+    );
+    const getIssue = vi
+      .spyOn(GitLab, "getIssue")
+      .mockRejectedValue(requestError(401));
+
+    expect(await GitLab.unfurl(issueUrl, admin)).toEqual({
+      error: "GitLab account not linked",
+    });
+    expect(getIssue).toHaveBeenCalledTimes(1);
+    expect(await Integration.findByPk(linked.id)).toBe(null);
+  });
+
+  it("should keep the linked account when the OAuth application credentials are refused", async () => {
+    const admin = await buildAdmin();
+    await buildWorkspaceIntegration(admin);
+    const linked = await buildLinkedAccount(admin);
+    const error = vi.spyOn(Logger, "error").mockImplementation(() => {});
+    // A wrong client secret is refused with a different error code.
+    vi.spyOn(GitLab, "refreshToken").mockRejectedValue(
+      new OAuthTokenError("GitLab", "invalid_client")
+    );
+    vi.spyOn(GitLab, "getIssue").mockRejectedValue(requestError(401));
+
+    expect(await GitLab.unfurl(issueUrl, admin)).toHaveProperty("error");
+    expect(await Integration.findByPk(linked.id)).not.toBe(null);
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("client id and secret"),
+      expect.any(OAuthTokenError)
+    );
   });
 
   it("should not pass other URLs on the instance to later providers", async () => {
@@ -238,6 +337,83 @@ describe("GitLab.unfurl", () => {
     } finally {
       env.GITLAB_URL = original;
     }
+  });
+});
+
+// Requests to GitLab's OAuth endpoint are answered by msw, which the test
+// setup registers for every server test and resets between tests.
+describe("GitLab token requests", () => {
+  it("should refresh a token with the given application", async () => {
+    let params: URLSearchParams | undefined;
+    msw.use(
+      http.post(tokenUrl, ({ request }) => {
+        params = new URL(request.url).searchParams;
+        return HttpResponse.json(refreshed);
+      })
+    );
+
+    expect(
+      await GitLab.refreshToken({
+        refreshToken: "refresh",
+        customUrl: gitlabUrl,
+        clientId: "client-a",
+        clientSecret: "client-a-secret",
+      })
+    ).toEqual(refreshed);
+    expect(params?.get("grant_type")).toEqual("refresh_token");
+    expect(params?.get("refresh_token")).toEqual("refresh");
+    expect(params?.get("client_id")).toEqual("client-a");
+    expect(params?.get("client_secret")).toEqual("client-a-secret");
+  });
+
+  it("should carry the OAuth error code of a refused refresh", async () => {
+    msw.use(
+      http.post(tokenUrl, () =>
+        HttpResponse.json(
+          {
+            error: "invalid_grant",
+            error_description:
+              "The provided authorization grant is invalid, expired, revoked, does not match the redirection URI used in the authorization request, or was issued to another client.",
+          },
+          { status: 400 }
+        )
+      )
+    );
+
+    const promise = GitLab.refreshToken({
+      refreshToken: "refresh",
+      customUrl: gitlabUrl,
+    });
+    await expect(promise).rejects.toBeInstanceOf(OAuthTokenError);
+    await expect(promise).rejects.toMatchObject({ code: "invalid_grant" });
+  });
+
+  it("should fail on a refusal that is not an OAuth error", async () => {
+    msw.use(
+      http.post(
+        tokenUrl,
+        () => new HttpResponse("Bad Gateway", { status: 502 })
+      )
+    );
+
+    await expect(
+      GitLab.refreshToken({ refreshToken: "refresh", customUrl: gitlabUrl })
+    ).rejects.toThrow("status: 502, Bad Gateway");
+  });
+
+  it("should fail with the body when a successful response is not JSON", async () => {
+    // The page of a proxy in front of the instance that answers with status
+    // 200.
+    msw.use(
+      http.post(
+        tokenUrl,
+        () => new HttpResponse("<html>Sign in</html>", { status: 200 })
+      )
+    );
+
+    await expect(
+      GitLab.refreshToken({ refreshToken: "refresh", customUrl: gitlabUrl })
+    ).rejects.toThrow("status: 200, <html>Sign in</html>");
   });
 });
 

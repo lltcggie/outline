@@ -1,6 +1,5 @@
 import { createAppAuth, type InstallationAuthOptions } from "@octokit/auth-app";
 import type { Endpoints, OctokitResponse } from "@octokit/types";
-import { addSeconds } from "date-fns";
 import { Octokit, RequestError } from "octokit";
 import pluralize from "pluralize";
 import type { Transaction } from "sequelize";
@@ -11,17 +10,24 @@ import {
   IntegrationType,
   UnfurlResourceType,
 } from "@shared/types";
-import { createContext } from "@server/context";
 import Logger from "@server/logging/Logger";
 import type { User } from "@server/models";
-import { Integration, IntegrationAuthentication } from "@server/models";
-import { sequelize } from "@server/storage/database";
+import { Integration } from "@server/models";
 import type {
   UnfurlIssueOrPR,
   UnfurlProject,
   UnfurlSignature,
 } from "@server/types";
 import fetch from "@server/utils/fetch";
+import {
+  findLinkedAccounts,
+  requestWithLinkedAccount,
+} from "@server/utils/linkedAccount";
+import {
+  OAuthTokenError,
+  parseJsonBody,
+  parseOAuthTokenError,
+} from "@server/utils/OAuthTokenError";
 import { GitHubUtils } from "../shared/GitHubUtils";
 import env from "./env";
 
@@ -63,8 +69,6 @@ type GitHubProject = {
   closed: boolean;
 };
 
-type LinkedAccount = Integration<IntegrationType.LinkedAccount>;
-
 const requestTimeout = 10_000;
 
 // The body of a successful response from the OAuth token endpoint. The
@@ -76,34 +80,11 @@ const AccessTokenResponseSchema = z.object({
   refresh_token: z.string().optional(),
 });
 
-// The body of an error from the OAuth token endpoint, which GitHub sends with
-// status 200, see RFC 6749 §5.2.
-const TokenErrorSchema = z.object({
-  error: z.string(),
-  error_description: z.string().optional(),
-});
-
 // The errors of a GraphQL response in which every error says that the
 // resource does not exist or is not visible to the user.
 const GraphqlNotFoundErrorsSchema = z
   .array(z.object({ type: z.enum(["NOT_FOUND", "FORBIDDEN"]) }))
   .nonempty();
-
-/** A refusal of the OAuth token endpoint, with the OAuth error code. */
-export class GitHubTokenError extends Error {
-  constructor(
-    /**
-     * The OAuth error code, such as "bad_refresh_token" when the refresh
-     * token was revoked or has expired.
-     */
-    public code: string,
-    description?: string
-  ) {
-    super(
-      `GitHub refused the token request: ${code}${description ? ` (${description})` : ""}`
-    );
-  }
-}
 
 const requestPlugin = (octokit: Octokit) => ({
   requestRepos: () =>
@@ -338,7 +319,7 @@ export class GitHub {
    * @param code the authorization code from the OAuth callback.
    * @returns the access token, with its lifetime and a refresh token when the
    * app is configured to expire user tokens.
-   * @throws {GitHubTokenError} when GitHub refuses the code.
+   * @throws {OAuthTokenError} when GitHub refuses the code.
    */
   public static oauthAccess(code: string) {
     return this.tokenRequest({ code, redirect_uri: GitHubUtils.callbackUrl() });
@@ -349,7 +330,7 @@ export class GitHub {
    *
    * @param refreshToken the refresh token issued with the previous token.
    * @returns the new access token, its lifetime and the next refresh token.
-   * @throws {GitHubTokenError} when GitHub refuses the refresh token, with the
+   * @throws {OAuthTokenError} when GitHub refuses the refresh token, with the
    * code "bad_refresh_token" when it was revoked or has expired.
    */
   public static async refreshToken(refreshToken: string) {
@@ -571,25 +552,10 @@ export class GitHub {
    * @returns the linked account integrations, with their authentication if any.
    */
   public static async findLinkedAccounts(
-    { teamId, userId }: { teamId: string; userId?: string },
+    params: { teamId: string; userId?: string },
     options: { transaction?: Transaction } = {}
   ) {
-    return Integration.findAll<LinkedAccount>({
-      where: {
-        service: IntegrationService.GitHub,
-        type: IntegrationType.LinkedAccount,
-        teamId,
-        ...(userId ? { userId } : {}),
-      },
-      include: [
-        {
-          model: IntegrationAuthentication,
-          as: "authentication",
-          required: false,
-        },
-      ],
-      transaction: options.transaction,
-    });
+    return findLinkedAccounts(IntegrationService.GitHub, params, options);
   }
 
   /**
@@ -606,25 +572,6 @@ export class GitHub {
       userId: user.id,
     });
     return integrations.find((integration) => integration.authentication);
-  }
-
-  /**
-   * Removes linked accounts together with their stored tokens.
-   *
-   * @param linkedAccounts the linked account integrations to remove.
-   * @param options the query options.
-   */
-  public static async destroyLinkedAccounts(
-    linkedAccounts: LinkedAccount[],
-    options: { transaction?: Transaction } = {}
-  ) {
-    for (const linkedAccount of linkedAccounts) {
-      // Destroying with force also removes the stored token.
-      await linkedAccount.destroy({
-        transaction: options.transaction,
-        force: true,
-      });
-    }
   }
 
   /**
@@ -670,26 +617,22 @@ export class GitHub {
     }
 
     try {
-      const token = await linkedAccount.authentication.refreshTokenIfNeeded(
-        (refreshToken) => this.refreshToken(refreshToken)
-      );
-
-      try {
-        return await this.unfurlResource(token, resource);
-      } catch (err) {
-        if (!(err instanceof RequestError) || err.status !== 401) {
-          throw err;
-        }
-
-        // The token was rejected although it should still be valid, which
-        // happens when the user revokes the app in GitHub, or when a refresh
-        // above failed and the expired token was kept.
-        const recovered = await this.recoverAccess(linkedAccount, actor, token);
-        if (!recovered) {
-          return { error: "GitHub account not linked" };
-        }
-        return await this.unfurlResource(recovered, resource);
+      const outcome = await requestWithLinkedAccount({
+        linkedAccount,
+        actor,
+        refresh: (refreshToken) => this.refreshToken(refreshToken),
+        isUnauthorized: (err) =>
+          err instanceof RequestError && err.status === 401,
+        // GitHub reports a revoked or expired refresh token with its own code
+        // in place of the "invalid_grant" of RFC 6749.
+        isRevoked: (err) =>
+          err instanceof OAuthTokenError && err.code === "bad_refresh_token",
+        request: (token) => this.unfurlResource(token, resource),
+      });
+      if (outcome.removed) {
+        return { error: "GitHub account not linked" };
       }
+      return outcome.result;
     } catch (err) {
       if (err instanceof RequestError && this.isRateLimited(err)) {
         // The user's token reached a rate limit, which says nothing about
@@ -715,7 +658,7 @@ export class GitHub {
         return { error: "Resource not found" };
       }
 
-      if (err instanceof GitHubTokenError) {
+      if (err instanceof OAuthTokenError) {
         // A refresh that GitHub refused for a reason other than a revoked
         // token is a problem of the installation rather than of the resource.
         Logger.error(
@@ -804,7 +747,7 @@ export class GitHub {
    *
    * @param params the grant parameters, such as the code or refresh token.
    * @returns the parsed response.
-   * @throws {GitHubTokenError} when GitHub does not issue a token.
+   * @throws {OAuthTokenError} when GitHub does not issue a token.
    */
   private static async tokenRequest(params: Record<string, string>) {
     const res = await fetch(this.tokenUrl, {
@@ -821,107 +764,24 @@ export class GitHub {
       timeout: requestTimeout,
     });
 
-    const body: unknown = await res.json();
-    const error = TokenErrorSchema.safeParse(body);
-    if (error.success) {
-      throw new GitHubTokenError(
-        error.data.error,
-        error.data.error_description
-      );
+    // GitHub reports an OAuth error with status 200, see RFC 6749 §5.2. The
+    // body is read as text, a response that is not an OAuth error nor JSON
+    // may be the page of a proxy in front of GitHub, whatever its status, and
+    // a server error of such a proxy is never an OAuth error.
+    const body = await res.text();
+    const error =
+      res.status < 500 ? parseOAuthTokenError("GitHub", body) : undefined;
+    if (error) {
+      throw error;
     }
-    if (res.status !== 200) {
+    const json = res.status === 200 ? parseJsonBody(body) : undefined;
+    if (json === undefined) {
       throw new Error(
-        `Error while requesting access token from GitHub; status: ${res.status}`
+        `Error while requesting access token from GitHub; status: ${res.status}, ${body}`
       );
     }
 
-    return AccessTokenResponseSchema.parse(body);
-  }
-
-  /**
-   * Refreshes the access token of a linked account after GitHub rejected it.
-   * When GitHub also rejects the refresh token itself the user has revoked the
-   * app, so the linked account is removed and the user is asked to connect
-   * again in their settings. A refresh that GitHub refuses for any other
-   * reason, such as wrong app credentials, is a problem of the installation
-   * and leaves the account in place.
-   *
-   * @param linkedAccount the linked account whose token was rejected.
-   * @param actor the user the account belongs to.
-   * @param rejectedToken the access token GitHub rejected.
-   * @returns the new access token, or undefined when the account was removed.
-   * @throws {Error} when the refresh fails for another reason, such as a
-   * network error or a misconfigured app.
-   */
-  private static async recoverAccess(
-    linkedAccount: LinkedAccount,
-    actor: User,
-    rejectedToken: string
-  ): Promise<string | undefined> {
-    const { authentication } = linkedAccount;
-
-    // Without a refresh token, which an app that does not expire user tokens
-    // never issues, the access cannot be restored.
-    if (!authentication.refreshToken) {
-      await this.removeRevokedAccount(linkedAccount, actor);
-      return;
-    }
-
-    try {
-      // GitHub invalidates a refresh token once it is used, so recoveries are
-      // serialized on the authentication row as in refreshTokenIfNeeded. One
-      // that finds the rejected token already replaced uses the replacement
-      // rather than spending the new refresh token.
-      return await sequelize.transaction(async (transaction) => {
-        const locked = await IntegrationAuthentication.findByPk(
-          authentication.id,
-          { transaction, lock: transaction.LOCK.UPDATE }
-        );
-        if (!locked || !locked.refreshToken) {
-          return undefined;
-        }
-        if (locked.token !== rejectedToken) {
-          return locked.token;
-        }
-
-        const refreshed = await this.refreshToken(locked.refreshToken);
-        await locked.update(
-          {
-            token: refreshed.access_token,
-            refreshToken: refreshed.refresh_token || locked.refreshToken,
-            expiresAt: addSeconds(Date.now(), refreshed.expires_in),
-          },
-          { transaction }
-        );
-        return refreshed.access_token;
-      });
-    } catch (err) {
-      if (err instanceof GitHubTokenError && err.code === "bad_refresh_token") {
-        await this.removeRevokedAccount(linkedAccount, actor);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * Removes a linked account whose access was revoked in GitHub, the same way
-   * as when the user disconnects it in their settings: the integration is
-   * deleted with an event, and the processor of that event clears the
-   * previews fetched with the account and removes its stored tokens.
-   *
-   * @param linkedAccount the linked account to remove.
-   * @param actor the user the account belongs to.
-   */
-  private static async removeRevokedAccount(
-    linkedAccount: LinkedAccount,
-    actor: User
-  ): Promise<void> {
-    Logger.info(
-      "plugins",
-      `GitHub access of user ${actor.id} was revoked, removing the linked account`
-    );
-    await linkedAccount.destroyWithCtx(createContext({ user: actor }));
+    return AccessTokenResponseSchema.parse(json);
   }
 
   private static async unfurlResource(token: string, resource: GitHubResource) {

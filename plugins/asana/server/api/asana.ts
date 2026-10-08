@@ -1,23 +1,21 @@
 import { addSeconds } from "date-fns";
 import Router from "koa-router";
-import { IntegrationService, IntegrationType } from "@shared/types";
+import { IntegrationService } from "@shared/types";
 import { toError } from "@shared/utils/error";
-import { createContext } from "@server/context";
 import { ValidationError } from "@server/errors";
 import Logger from "@server/logging/Logger";
 import apexAuthRedirect from "@server/middlewares/apexAuthRedirect";
 import auth from "@server/middlewares/authentication";
 import validate from "@server/middlewares/validate";
-import { Integration, IntegrationAuthentication } from "@server/models";
 import { sequelize } from "@server/storage/database";
 import { LockHelper } from "@server/storage/LockHelper";
 import type { APIContext } from "@server/types";
-import { CacheHelper } from "@server/utils/CacheHelper";
+import { saveLinkedAccount } from "@server/utils/linkedAccount";
 import {
   generateOAuthStateNonce,
   verifyOAuthStateNonce,
 } from "@server/utils/oauth";
-import { RedisPrefixHelper } from "@server/utils/RedisPrefixHelper";
+import { clearUnfurlCacheAfterCommit } from "@server/utils/unfurlCache";
 import { AsanaOAuthNonceCookie, AsanaUtils } from "../../shared/AsanaUtils";
 import { Asana } from "../asana";
 import env from "../env";
@@ -123,46 +121,22 @@ router.get(
           requireAuthentication: false,
         });
 
-        if (existing?.authentication) {
-          await existing.authentication.update(tokens, { transaction });
-          existing.settings = settings;
-          await existing.save({ transaction });
-        } else {
-          if (existing) {
-            await existing.destroy({ transaction, force: true });
-          }
-
-          const authentication = await IntegrationAuthentication.create(
-            {
-              service: IntegrationService.Asana,
-              userId: user.id,
-              teamId: user.teamId,
-              ...tokens,
-            },
-            { transaction }
-          );
-
-          await Integration.createWithCtx<
-            Integration<IntegrationType.LinkedAccount>
-          >(createContext({ user, transaction }), {
-            service: IntegrationService.Asana,
-            type: IntegrationType.LinkedAccount,
-            userId: user.id,
-            teamId: user.teamId,
-            authenticationId: authentication.id,
-            settings,
-          });
-        }
+        await saveLinkedAccount({
+          user,
+          service: IntegrationService.Asana,
+          existing,
+          settings,
+          tokens,
+          transaction,
+        });
 
         // The user's cached unfurls, including failures to unfurl without an
         // account, are stale now. A newly created account also clears them
         // when its event is processed, but that runs asynchronously and may
         // be later than the first request after the redirect.
-        transaction.afterCommit(async () => {
-          await CacheHelper.clearData(
-            RedisPrefixHelper.getUnfurlPrefix(user.teamId, user.id)
-          );
-        });
+        clearUnfurlCacheAfterCommit(transaction, [
+          { teamId: user.teamId, userId: user.id },
+        ]);
       });
 
       ctx.redirect(AsanaUtils.url);

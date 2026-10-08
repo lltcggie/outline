@@ -41,9 +41,11 @@ function GitLab() {
   const installRequest = query.get("install_request");
   const appName = env.APP_NAME;
 
+  // Always fetched afresh, as an account is removed on the server when the
+  // user revokes the application in GitLab, which the client is not told
+  // about.
   React.useEffect(() => {
-    void integrations.fetchAll({
-      service: IntegrationService.GitLab,
+    void integrations.fetchService(IntegrationService.GitLab, {
       withRelations: true,
     });
   }, [integrations]);

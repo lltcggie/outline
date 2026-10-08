@@ -2,7 +2,6 @@ import Router from "koa-router";
 import { Op } from "sequelize";
 import { toError } from "@shared/utils/error";
 import { IntegrationService, IntegrationType } from "@shared/types";
-import { createContext } from "@server/context";
 import { NotFoundError, ValidationError } from "@server/errors";
 import apexAuthRedirect from "@server/middlewares/apexAuthRedirect";
 import auth from "@server/middlewares/authentication";
@@ -11,13 +10,15 @@ import validate from "@server/middlewares/validate";
 import validateWebhook from "@server/middlewares/validateWebhook";
 import { IntegrationAuthentication, Integration } from "@server/models";
 import { authorize, can } from "@server/policies";
+import { sequelize } from "@server/storage/database";
+import { LockHelper } from "@server/storage/LockHelper";
 import type { APIContext } from "@server/types";
-import { CacheHelper } from "@server/utils/CacheHelper";
-import { RedisPrefixHelper } from "@server/utils/RedisPrefixHelper";
+import { saveLinkedAccount } from "@server/utils/linkedAccount";
 import {
   generateOAuthStateNonce,
   verifyOAuthStateNonce,
 } from "@server/utils/oauth";
+import { clearUnfurlCacheAfterCommit } from "@server/utils/unfurlCache";
 import { validateUrlNotPrivate } from "@server/utils/url";
 import { addSeconds } from "date-fns";
 import Logger from "@server/logging/Logger";
@@ -100,11 +101,7 @@ router.post(
           { transaction }
         );
         gitlab.pending = true;
-        transaction.afterCommit(async () => {
-          await CacheHelper.clearData(
-            RedisPrefixHelper.getUnfurlPrefix(user.teamId)
-          );
-        });
+        clearUnfurlCacheAfterCommit(transaction, [{ teamId: user.teamId }]);
       }
 
       if (integration?.authentication) {
@@ -265,6 +262,18 @@ router.get(
         customUrl,
       });
 
+      // Two callbacks of the same user completing at once would both find no
+      // existing account and link twice, and two users completing with the
+      // same GitLab account at once would both pass the duplicate check
+      // below, so callbacks are serialized per workspace from here on. The
+      // lock is only taken after the requests to GitLab above, so that they
+      // are not made while it is held.
+      await LockHelper.acquire(
+        sequelize,
+        `gitlab.link:${user.teamId}`,
+        transaction
+      );
+
       const linkedAccounts = await GitLab.findLinkedAccounts(
         { teamId: user.teamId, customUrl },
         { transaction }
@@ -309,34 +318,14 @@ router.get(
         (integration) => integration.userId === user.id
       );
 
-      if (existing?.authentication) {
-        await existing.authentication.update(tokens, { transaction });
-        existing.settings = settings;
-        await existing.save({ transaction });
-      } else {
-        if (existing) {
-          await GitLab.destroyLinkedAccounts([existing], { transaction });
-        }
-
-        const authentication = await IntegrationAuthentication.create(
-          {
-            service: IntegrationService.GitLab,
-            userId: user.id,
-            teamId: user.teamId,
-            ...tokens,
-          },
-          { transaction }
-        );
-
-        await Integration.createWithCtx(createContext({ user, transaction }), {
-          service: IntegrationService.GitLab,
-          type: IntegrationType.LinkedAccount,
-          userId: user.id,
-          teamId: user.teamId,
-          authenticationId: authentication.id,
-          settings,
-        });
-      }
+      await saveLinkedAccount({
+        user,
+        service: IntegrationService.GitLab,
+        existing,
+        settings,
+        tokens,
+        transaction,
+      });
 
       // Authorization succeeded with the OAuth application, so the instance is
       // connected and its links are unfurled for members from now on.
@@ -354,14 +343,9 @@ router.get(
       // instance is connected. A newly created account also clears the user's
       // when its event is processed, but that runs asynchronously and may be
       // later than the first request after the redirect.
-      transaction.afterCommit(async () => {
-        await CacheHelper.clearData(
-          RedisPrefixHelper.getUnfurlPrefix(
-            user.teamId,
-            isPending ? undefined : user.id
-          )
-        );
-      });
+      clearUnfurlCacheAfterCommit(transaction, [
+        { teamId: user.teamId, userId: isPending ? undefined : user.id },
+      ]);
 
       ctx.redirect(GitLabUtils.url);
     } catch (err) {

@@ -17,9 +17,9 @@ import CacheIssueSourcesTask from "@server/queues/tasks/CacheIssueSourcesTask";
 import { sequelize } from "@server/storage/database";
 import { LockHelper } from "@server/storage/LockHelper";
 import type { APIContext } from "@server/types";
-import { CacheHelper } from "@server/utils/CacheHelper";
+import { saveLinkedAccount } from "@server/utils/linkedAccount";
 import { verifyOAuthStateNonce } from "@server/utils/oauth";
-import { RedisPrefixHelper } from "@server/utils/RedisPrefixHelper";
+import { clearUnfurlCacheAfterCommit } from "@server/utils/unfurlCache";
 import { GitHubOAuthNonceCookie, GitHubUtils } from "../../shared/GitHubUtils";
 import env from "../env";
 import { GitHub, type UserInstallation } from "../github";
@@ -173,59 +173,27 @@ router.get(
         });
         isDuplicate = linkedByOther > 0;
 
-        // A token that is not kept, the one replaced by linking again or the
-        // one just issued for an account that is refused as a duplicate, is
+        // Only ever update the user's own linked account, never another
+        // user's.
+        const [existing] = await GitHub.findLinkedAccounts(
+          { teamId: user.teamId, userId: user.id },
+          { transaction }
+        );
+
+        // A token that is not kept, the one just issued for an account that
+        // is refused as a duplicate or the one replaced by linking again, is
         // revoked below, GitHub would otherwise keep it valid until it
         // expires.
-        let staleToken: string | undefined = isDuplicate
+        const staleToken = isDuplicate
           ? tokens.token
-          : undefined;
-
-        if (!isDuplicate) {
-          // Only ever update the user's own linked account, never another
-          // user's. An account whose authentication is missing is replaced.
-          const [existing] = await GitHub.findLinkedAccounts(
-            { teamId: user.teamId, userId: user.id },
-            { transaction }
-          );
-
-          if (existing?.authentication) {
-            if (existing.authentication.token !== tokens.token) {
-              staleToken = existing.authentication.token;
-            }
-            // The integration row is written before the authentication row,
-            // the order in which removing an account locks them, so that a
-            // removal running at the same time cannot deadlock with this.
-            existing.settings = settings;
-            await existing.save({ transaction });
-            await existing.authentication.update(tokens, { transaction });
-          } else {
-            if (existing) {
-              await GitHub.destroyLinkedAccounts([existing], { transaction });
-            }
-
-            const authentication = await IntegrationAuthentication.create(
-              {
-                service: IntegrationService.GitHub,
-                userId: user.id,
-                teamId: user.teamId,
-                ...tokens,
-              },
-              { transaction }
-            );
-
-            await Integration.createWithCtx<
-              Integration<IntegrationType.LinkedAccount>
-            >(createContext({ user, transaction }), {
+          : await saveLinkedAccount({
+              user,
               service: IntegrationService.GitHub,
-              type: IntegrationType.LinkedAccount,
-              userId: user.id,
-              teamId: user.teamId,
-              authenticationId: authentication.id,
+              existing,
               settings,
+              tokens,
+              transaction,
             });
-          }
-        }
 
         // The user's cached unfurls, including failures to unfurl without an
         // account, are stale now, as are those of every member once an
@@ -233,25 +201,13 @@ router.get(
         // reach may have changed. A newly created integration also clears
         // them when its event is processed, but that runs asynchronously and
         // may be later than the first request after the redirect.
-        transaction.afterCommit(async () => {
-          try {
-            await CacheHelper.clearData(
-              RedisPrefixHelper.getUnfurlPrefix(
-                user.teamId,
-                installation ? undefined : user.id
-              )
-            );
-          } catch (err) {
-            // The account is linked, and the stale entries expire on their
-            // own, so this is not worth reporting the link as failed.
-            Logger.warn(
-              "Failed to clear cached unfurls after linking a GitHub account",
-              toError(err)
-            );
-          }
+        clearUnfurlCacheAfterCommit(transaction, [
+          { teamId: user.teamId, userId: installation ? undefined : user.id },
+        ]);
+        // The revocation is not awaited, the commit waits for its hooks and so
+        // the redirect would wait for GitHub.
+        transaction.afterCommit(() => {
           if (staleToken) {
-            // The revocation is not awaited, the commit waits for its hooks
-            // and so the redirect would wait for GitHub.
             void GitHub.discardToken(staleToken);
           }
         });
