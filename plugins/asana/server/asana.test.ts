@@ -6,11 +6,12 @@ import {
   UnfurlResourceType,
 } from "@shared/types";
 import Logger from "@server/logging/Logger";
-import { Event, Integration, IntegrationAuthentication } from "@server/models";
+import { Integration, IntegrationAuthentication } from "@server/models";
 import type { User } from "@server/models";
 import { buildUser } from "@server/test/factories";
 import { server } from "@server/test/msw";
 import { initI18n } from "@server/utils/i18n";
+import { OAuthTokenError } from "@server/utils/OAuthTokenError";
 import { AsanaUtils } from "../shared/AsanaUtils";
 import { Asana, AsanaApiError } from "./asana";
 import env from "./env";
@@ -371,6 +372,8 @@ describe("Asana.unfurl", () => {
     expect(result).toHaveProperty("progress", undefined);
   });
 
+  // The recovery itself is shared with the other integrations and tested
+  // with server/utils/linkedAccount.ts, these check what Asana passes to it.
   it("should refresh the token and retry when Asana rejects it", async () => {
     const user = await buildUser();
     await buildLinkedAccount(user);
@@ -397,9 +400,11 @@ describe("Asana.unfurl", () => {
 
   it("should remove the linked account when the user revoked the application", async () => {
     const user = await buildUser();
-    const linkedAccount = await buildLinkedAccount(user);
+    await buildLinkedAccount(user);
+    // Asana reports a revoked refresh token with the "invalid_grant" of RFC
+    // 6749, which the shared recovery recognizes by itself.
     vi.spyOn(Asana, "refreshToken").mockRejectedValue(
-      new AsanaApiError(400, "invalid_grant", "invalid_grant")
+      new OAuthTokenError("Asana", "invalid_grant")
     );
     const getTask = vi
       .spyOn(Asana, "getTask")
@@ -410,18 +415,6 @@ describe("Asana.unfurl", () => {
     });
     expect(getTask).toHaveBeenCalledTimes(1);
     expect(await Asana.findLinkedAccount(user)).toBeNull();
-
-    // The account is deleted the same way as from the settings, with an event
-    // whose processor clears the user's previews and removes the tokens.
-    const deleted = await Integration.findByPk(linkedAccount.id, {
-      paranoid: false,
-    });
-    expect(deleted?.deletedAt).toBeTruthy();
-    expect(
-      await Event.findOne({
-        where: { name: "integrations.delete", modelId: linkedAccount.id },
-      })
-    ).not.toBeNull();
   });
 
   it("should keep the linked account when the OAuth application credentials are refused", async () => {
@@ -431,7 +424,7 @@ describe("Asana.unfurl", () => {
     // A wrong ASANA_CLIENT_SECRET is refused with the same status as a
     // revoked refresh token, but with a different error code.
     vi.spyOn(Asana, "refreshToken").mockRejectedValue(
-      new AsanaApiError(400, "invalid_client", "invalid_client")
+      new OAuthTokenError("Asana", "invalid_client")
     );
     vi.spyOn(Asana, "getTask").mockRejectedValue(new AsanaApiError(401));
 
@@ -444,20 +437,8 @@ describe("Asana.unfurl", () => {
     ).toEqual(1);
     expect(error).toHaveBeenCalledWith(
       expect.stringContaining("ASANA_CLIENT_SECRET"),
-      expect.any(AsanaApiError)
+      expect.any(OAuthTokenError)
     );
-  });
-
-  it("should keep the linked account when the refresh fails for another reason", async () => {
-    const user = await buildUser();
-    await buildLinkedAccount(user);
-    vi.spyOn(Asana, "refreshToken").mockRejectedValue(
-      new Error("socket hang up")
-    );
-    vi.spyOn(Asana, "getTask").mockRejectedValue(new AsanaApiError(401));
-
-    expect(await Asana.unfurl(taskUrl, user)).toHaveProperty("error");
-    expect(await Asana.findLinkedAccount(user)).not.toBeNull();
   });
 
   it("should warn when the application lacks a required OAuth scope", async () => {
@@ -536,10 +517,9 @@ describe("Asana requests", () => {
       })
     );
 
-    await expect(Asana.refreshToken("refresh")).rejects.toMatchObject({
-      status: 400,
-      code: "invalid_client",
-    });
+    const promise = Asana.refreshToken("refresh");
+    await expect(promise).rejects.toBeInstanceOf(OAuthTokenError);
+    await expect(promise).rejects.toMatchObject({ code: "invalid_client" });
     expect(grant).toEqual("refresh_token");
   });
 
@@ -551,10 +531,9 @@ describe("Asana requests", () => {
       )
     );
 
-    await expect(Asana.refreshToken("refresh")).rejects.toMatchObject({
-      status: 502,
-      code: undefined,
-    });
+    const promise = Asana.refreshToken("refresh");
+    await expect(promise).rejects.toBeInstanceOf(AsanaApiError);
+    await expect(promise).rejects.toMatchObject({ status: 502 });
   });
 
   it("should recognize a missing scope in an API error", async () => {

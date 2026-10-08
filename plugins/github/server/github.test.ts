@@ -12,10 +12,11 @@ import type { User } from "@server/models";
 import { buildAdmin, buildUser } from "@server/test/factories";
 import { server as msw } from "@server/test/msw";
 import { getTestServer } from "@server/test/support";
+import { OAuthTokenError } from "@server/utils/OAuthTokenError";
 import Iframely from "plugins/iframely/server/iframely";
 import { GitHubIssueProvider } from "./GitHubIssueProvider";
 import env from "./env";
-import { GitHub, GitHubTokenError } from "./github";
+import { GitHub } from "./github";
 import { uninstall } from "./uninstall";
 
 const server = getTestServer();
@@ -107,7 +108,6 @@ async function buildInstallation(admin: User, installationId = 1) {
  *
  * @param user the user linking the account.
  * @param options.expired whether the token has expired and must be refreshed.
- * @param options.expiring whether the app issues expiring tokens.
  * @param options.accountId the id of the GitHub account.
  * @returns the linked account integration.
  */
@@ -115,21 +115,16 @@ async function buildLinkedAccount(
   user: User,
   {
     expired = false,
-    expiring = true,
     accountId = 1,
-  }: { expired?: boolean; expiring?: boolean; accountId?: number } = {}
+  }: { expired?: boolean; accountId?: number } = {}
 ) {
   const authentication = await IntegrationAuthentication.create({
     service: IntegrationService.GitHub,
     userId: user.id,
     teamId: user.teamId,
     token: `token-${user.id}`,
-    ...(expiring
-      ? {
-          refreshToken: `refresh-${user.id}`,
-          expiresAt: expired ? new Date(0) : new Date(Date.now() + 3600_000),
-        }
-      : {}),
+    refreshToken: `refresh-${user.id}`,
+    expiresAt: expired ? new Date(0) : new Date(Date.now() + 3600_000),
   });
   return Integration.create<Integration<IntegrationType.LinkedAccount>>({
     service: IntegrationService.GitHub,
@@ -264,10 +259,16 @@ describe("GitHub.unfurl", () => {
 
   it("should return an error when GitHub denies access", async () => {
     const user = await buildUser();
-    await buildLinkedAccount(user);
+    const linked = await buildLinkedAccount(user);
     vi.spyOn(GitHub, "getIssue").mockRejectedValue(requestError(404));
+    const refreshToken = vi.spyOn(GitHub, "refreshToken");
 
-    expect(await GitHub.unfurl(issueUrl, user)).toHaveProperty("error");
+    expect(await GitHub.unfurl(issueUrl, user)).toEqual({
+      error: "Resource not found",
+    });
+    // Only a rejected token is recovered from.
+    expect(refreshToken).not.toHaveBeenCalled();
+    expect(await Integration.findByPk(linked.id)).not.toBe(null);
   });
 
   it("should report a rate limit rather than hiding the resource", async () => {
@@ -318,70 +319,37 @@ describe("GitHub.unfurl", () => {
     expect(authentication.refreshToken).toEqual("next-refresh-token");
   });
 
+  // The recovery itself is shared with the other integrations and tested
+  // with server/utils/linkedAccount.ts, these check what GitHub passes to it.
   it("should remove the linked account when the user revoked the app", async () => {
     const user = await buildUser();
     const linked = await buildLinkedAccount(user);
     vi.spyOn(GitHub, "getIssue").mockRejectedValue(requestError(401));
+    // GitHub reports a revoked refresh token with its own code rather than
+    // the "invalid_grant" of RFC 6749.
     vi.spyOn(GitHub, "refreshToken").mockRejectedValue(
-      new GitHubTokenError("bad_refresh_token")
+      new OAuthTokenError("GitHub", "bad_refresh_token")
     );
 
     expect(await GitHub.unfurl(issueUrl, user)).toHaveProperty("error");
     expect(await Integration.findByPk(linked.id)).toBe(null);
-  });
-
-  it("should remove the linked account when a token that cannot be refreshed is rejected", async () => {
-    const user = await buildUser();
-    const linked = await buildLinkedAccount(user, { expiring: false });
-    vi.spyOn(GitHub, "getIssue").mockRejectedValue(requestError(401));
-    const refreshToken = vi.spyOn(GitHub, "refreshToken");
-
-    expect(await GitHub.unfurl(issueUrl, user)).toHaveProperty("error");
-    expect(refreshToken).not.toHaveBeenCalled();
-    expect(await Integration.findByPk(linked.id)).toBe(null);
-  });
-
-  it("should use the token a concurrent recovery stored instead of refreshing again", async () => {
-    const user = await buildUser();
-    const linked = await buildLinkedAccount(user);
-    const getIssue = vi
-      .spyOn(GitHub, "getIssue")
-      .mockImplementationOnce(async () => {
-        // Another request recovered from the same rejection meanwhile, which
-        // spent the refresh token GitHub invalidates once used.
-        const authentication = await IntegrationAuthentication.findByPk(
-          linked.authenticationId,
-          { rejectOnEmpty: true }
-        );
-        await authentication.update({
-          token: "concurrent-token",
-          refreshToken: "concurrent-refresh-token",
-        });
-        throw requestError(401);
-      })
-      .mockResolvedValueOnce(issue);
-    const refreshToken = vi.spyOn(GitHub, "refreshToken");
-
-    const result = await GitHub.unfurl(issueUrl, user);
-    expect(result).toMatchObject({ title: "Secret issue" });
-    expect(refreshToken).not.toHaveBeenCalled();
-    expect(getIssue).toHaveBeenLastCalledWith(
-      "concurrent-token",
-      expect.anything()
-    );
-    expect(await Integration.findByPk(linked.id)).not.toBe(null);
   });
 
   it("should keep the linked account when the refresh is refused for another reason", async () => {
     const user = await buildUser();
     const linked = await buildLinkedAccount(user);
+    const error = vi.spyOn(Logger, "error").mockImplementation(() => {});
     vi.spyOn(GitHub, "getIssue").mockRejectedValue(requestError(401));
     vi.spyOn(GitHub, "refreshToken").mockRejectedValue(
-      new GitHubTokenError("incorrect_client_credentials")
+      new OAuthTokenError("GitHub", "incorrect_client_credentials")
     );
 
     expect(await GitHub.unfurl(issueUrl, user)).toHaveProperty("error");
     expect(await Integration.findByPk(linked.id)).not.toBe(null);
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining("GITHUB_CLIENT_SECRET"),
+      expect.any(OAuthTokenError)
+    );
   });
 
   it("should not pass other GitHub URLs on to later providers", async () => {
@@ -534,6 +502,45 @@ describe("GitHub token requests", () => {
     msw.use(http.post(tokenUrl, () => HttpResponse.json({}, { status: 502 })));
 
     await expect(GitHub.refreshToken("refresh")).rejects.toThrow("status: 502");
+  });
+
+  it("should not take a server error for an OAuth error", async () => {
+    // A proxy in front of GitHub that reports its errors as JSON.
+    msw.use(
+      http.post(tokenUrl, () =>
+        HttpResponse.json({ error: "upstream timeout" }, { status: 502 })
+      )
+    );
+
+    const promise = GitHub.refreshToken("refresh");
+    await expect(promise).rejects.toThrow("status: 502");
+    await expect(promise).rejects.not.toBeInstanceOf(OAuthTokenError);
+  });
+
+  it("should fail with the status when the token response is not JSON", async () => {
+    // The page of a proxy in front of GitHub.
+    msw.use(
+      http.post(
+        tokenUrl,
+        () => new HttpResponse("<html>Bad Gateway</html>", { status: 502 })
+      )
+    );
+
+    await expect(GitHub.refreshToken("refresh")).rejects.toThrow("status: 502");
+  });
+
+  it("should fail with the body when a successful token response is not JSON", async () => {
+    // The page of a proxy in front of GitHub that answers with status 200.
+    msw.use(
+      http.post(
+        tokenUrl,
+        () => new HttpResponse("<html>Sign in</html>", { status: 200 })
+      )
+    );
+
+    await expect(GitHub.refreshToken("refresh")).rejects.toThrow(
+      "status: 200, <html>Sign in</html>"
+    );
   });
 
   it("should revoke a token and ignore one GitHub no longer knows", async () => {

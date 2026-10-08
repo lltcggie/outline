@@ -1,12 +1,10 @@
 import type { IssueSource } from "@shared/schema";
-import { IntegrationService, IntegrationType } from "@shared/types";
+import { IntegrationService, type IntegrationType } from "@shared/types";
 import Logger from "@server/logging/Logger";
-import { Integration } from "@server/models";
+import type { Integration } from "@server/models";
 import { BaseIssueProvider } from "@server/utils/BaseIssueProvider";
-import { CacheHelper } from "@server/utils/CacheHelper";
-import { RedisPrefixHelper } from "@server/utils/RedisPrefixHelper";
+import { removeLinkedAccounts } from "@server/utils/linkedAccount";
 import { GitLabUtils } from "../shared/GitLabUtils";
-import { sequelize } from "@server/storage/database";
 import { GitLab } from "./gitlab";
 
 interface GitLabWebhookPayload {
@@ -57,7 +55,7 @@ export class GitLabIssueProvider extends BaseIssueProvider {
     // Issue sources are not kept for GitLab, see fetchSources, so only the
     // removal of users matters.
     if (eventName === "user_destroy") {
-      await this.destroyLinkedAccounts(typedPayload, headers, teamId);
+      await this.handleUserDestroyEvent(typedPayload, headers, teamId);
     }
   }
 
@@ -70,7 +68,7 @@ export class GitLabIssueProvider extends BaseIssueProvider {
    * @param teamId the team whose secret authorized the webhook, or null when
    * it was authorized by the provider-wide secret.
    */
-  private async destroyLinkedAccounts(
+  private async handleUserDestroyEvent(
     payload: GitLabWebhookPayload,
     headers: Record<string, unknown>,
     teamId: string | null
@@ -84,39 +82,19 @@ export class GitLabIssueProvider extends BaseIssueProvider {
       return;
     }
 
-    await sequelize.transaction(async (transaction) => {
-      const linkedAccounts = (
-        (await Integration.findAll({
-          where: {
-            service: IntegrationService.GitLab,
-            type: IntegrationType.LinkedAccount,
-            ...(teamId ? { teamId } : {}),
-            "settings.gitlab.account.id": gitlabUserId,
-          },
-          lock: transaction.LOCK.UPDATE,
-          transaction,
-        })) as Integration<IntegrationType.LinkedAccount>[]
-      ).filter((integration) =>
-        GitLabUtils.isSameInstance(
-          integration.settings?.gitlab?.url,
-          instanceUrl
-        )
-      );
-
-      await GitLab.destroyLinkedAccounts(linkedAccounts, { transaction });
-
-      transaction.afterCommit(async () => {
-        await Promise.all(
-          linkedAccounts.map((linkedAccount) =>
-            CacheHelper.clearData(
-              RedisPrefixHelper.getUnfurlPrefix(
-                linkedAccount.teamId,
-                linkedAccount.userId
-              )
-            )
-          )
-        );
-      });
-    });
+    await removeLinkedAccounts(
+      {
+        service: IntegrationService.GitLab,
+        ...(teamId ? { teamId } : {}),
+        "settings.gitlab.account.id": gitlabUserId,
+      },
+      {
+        filter: (integration) =>
+          GitLabUtils.isSameInstance(
+            integration.settings?.gitlab?.url,
+            instanceUrl
+          ),
+      }
+    );
   }
 }
