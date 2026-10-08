@@ -11,7 +11,7 @@ GitLab連携のリンクプレビュー（展開・メンション）が、各�
 - 管理者が登録するワークスペース連携は、GitLab URLとOAuthアプリケーション（クライアントID・シークレット）だけを持つ。展開用のトークンは持たない。
 - 各ユーザーは、設定 → GitLab の「Your account」から自分のGitLabアカウントを連携する。プレビューは本人のトークンだけで取得され、連携していないユーザーには通常のリンクとして表示される。閲覧者・ゲストも連携できる。
 - 取得結果は外部メンション（Issue・マージリクエスト・プロジェクト・URL）に保存されない。保存済みのデータはサーバー側の保存時にも除去される。
-- 展開キャッシュはユーザー単位になっている。GitHubやIframelyなど結果が全員同じプロバイダーだけがチーム内で共有される。
+- 展開キャッシュはユーザー単位になっている。Iframelyなど結果が全員同じプロバイダーだけがチーム内で共有される。
 - 設定済みのGitLabインスタンスのURLは、本人が連携していない場合や解釈できないURLでも、Iframelyなど後続の展開プロバイダーに渡されない。
 - `EDITOR_VERSION` のメジャー番号を上げている（17 → 18）。取得結果を保存する旧クライアントは共同編集サーバーから拒否され、再読み込みを促される。
 
@@ -53,9 +53,62 @@ OAuthアプリケーションのスコープ（`read_api read_user`）とコー�
 ### 注意事項
 
 - 移行前に送信済みのWebhookやメールに含まれた内容は回収できない。
-- GitHub・Linear連携は引き続きワークスペース共有のトークンで取得する。閲覧権限の分離が必要な場合は、これらの連携を有効にしないこと。Asana連携（後述）はユーザー単位で取得する。
+- Linear連携は引き続きワークスペース共有のトークンで取得する。閲覧権限の分離が必要な場合は、この連携を有効にしないこと。GitHub連携とAsana連携（いずれも後述）はユーザー単位で取得する。
 - Iframelyを使わない場合は `IFRAMELY_API_KEY` / `IFRAMELY_URL` を設定しないこと。
 - 上流をマージするとき、上流が `shared/editor/version.ts` の `EDITOR_VERSION` を上げていたら、こちらのメジャー番号が上流より大きくなるよう調整すること。
+
+## GitHub連携のプレビューをユーザー個人の権限で取得する
+
+### 変更の概要
+
+GitHub連携のリンクプレビュー（展開・メンション）を、GitLab連携と同じく各ユーザー自身のGitHub権限で見える情報だけを表示するようにした。上流では、管理者がインストールしたGitHub Appのインストール認証（installation token）でワークスペース全員分を取得していたため、Appをインストールしたリポジトリであれば、GitHub側でアクセス権の無いメンバーでもURLを貼るだけでIssue・プルリクエストの内容が見えていた。
+
+- ワークスペース連携（Embed型）は、GitHub Appをインストールした組織・アカウント（installation）を記録するだけで、展開には使わない。管理者が設定 → GitHub の「Workspace」からAppをインストールする。インストールを完了した管理者自身のアカウントも同時に連携される。`github.callback` でインストールを記録できるのは管理者だけ（上流にはこの確認が無い。メンバーが GitHub 側からインストールを完了すると `install_forbidden` で拒否され、管理者が設定から「Install」をやり直すと既存のインストールが `setup_action=update` で記録される）。同じインストールを二度完了しても連携は1件のまま（アカウント情報だけ更新される）。
+- 各ユーザーは、設定 → GitHub の「Your account」から自分のGitHubアカウントを連携する（GitHub Appのユーザー認可）。プレビューは本人のユーザートークン（user-to-server token）だけで取得され、連携していないユーザーには通常のリンクとして表示される。閲覧者・ゲストも連携できる。GitHubの仕様により、このトークンで見えるのは「本人がアクセスでき」かつ「Appがインストールされている」リポジトリだけなので、Appのインストールは引き続き管理者が行う。
+- 1つのGitHubアカウントはワークスペース内で1人だけが連携できる（GitLab連携と同じ。2人目は `duplicate_account` で拒否される。Asana連携は複数人で連携できる）。
+- 展開キャッシュはユーザー単位。github.com のURLは、ワークスペースにAppのインストールが1つでもあるか本人が連携済みなら、本人が連携していない場合やコミット・ファイルなど解釈できないURLでも、Iframelyなど後続の展開プロバイダーに渡さない。どちらも無いワークスペースでは上流どおり後続に渡す。
+- Appが「Expire user authorization tokens」（既定で有効）で発行する8時間期限のトークンは、リフレッシュトークンで自動更新される。期限の無いトークンのAppでもそのまま使える。
+- 本人がGitHub側でAppの認可を取り消すと、次にプレビューを取得したときにGitHubがトークンを拒否（401）し、リフレッシュも `bad_refresh_token` で拒否されるので、連携は自動的に解除される（ログに `GitHub access of user … was revoked` が出る）。GitHubが送る `github_app_authorization` Webhook（Appは自動的に受信する）でも、その時点で解除される。設定 → GitHub を開き直すと「Connect」に戻っているので、連携し直す。
+- 設定 → GitHub で連携を解除すると、保存していたトークンをGitHub側でも失効させる（失敗しても警告ログのみ）。連携のやり直しで置き換えられたトークンや、重複アカウント・インストールの不一致・保存の失敗で保存されなかったトークンも同じように失効させる。管理者がインストールを解除すると、上流と同じくAppをその組織からアンインストールするが、各ユーザーの連携は残る（トークンはAppのもので、インストールのものではない）。
+- 設定画面はメンバー全員に表示される（`GITHUB_CLIENT_ID` が未設定のときは管理者のみ）。
+- `issueSources`（インストールから到達できるリポジトリの一覧）は上流どおりインストール認証で取得・保存するが、プレビューには使わない。
+- 本体側の変更: `shared/types.ts`（LinkedAccount型の設定に `github`）、`server/models/Integration.ts` の `presentSettings`（LinkedAccount型に `github`）、`server/models/IntegrationAuthentication.ts`（`refreshToken` の型をNULL可に。GitHubだけはAppの設定でリフレッシュトークンの有無が変わるので、無いときはNULLを保存して以前の連携の値を残さない）、`app/stores/IntegrationsStore.ts`（`github` はEmbed型のみ、`githubLinkedAccount` を追加）。クライアントの `Hook.MentionProvider` にGitHubを登録し、貼り付けメニューはワークスペース連携の有無にかかわらず `GITHUB_CLIENT_ID` が設定されていればIssue・プルリクエスト・プロジェクトのURLをその型にする。
+
+### 必要なもの（GitHub Appの設定）
+
+上流の手順で作ったGitHub Appをそのまま使える。次の設定になっていることを確認する。
+
+- Callback URL: `<OutlineのURL>/api/github.callback`（上流と同じ）
+- 「Request user authorization (OAuth) during installation」: 有効（上流でも必要。無効だとインストール完了時に `code` が渡らず、コールバックが400になる）
+- 「Expire user authorization tokens」: 有効を推奨（既定で有効）。無効にすると期限の無いトークンになり、認可の取り消しは401かWebhookで検出される。
+- Webhook: 上流と同じ（`<OutlineのURL>/api/github.webhooks`、`GITHUB_WEBHOOK_SECRET`）。
+- Permissions: 上流と同じ（Issues・Pull requests・Metadata・Projectsの読み取り）。
+
+### 環境変数
+
+上流と同じ（`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` / `GITHUB_WEBHOOK_SECRET` / `GITHUB_APP_NAME` / `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY`）。追加の環境変数は無い。
+
+### 既存のインスタンスの移行手順
+
+1. Outlineをこのバージョンに更新する。デプロイ直後は、インストール認証を使わなくなるため、誰にもGitHubのプレビューが出ない。既存のインストール（ワークスペース連携）はそのまま使える。
+2. 保存済みの展開データを消去するスクリプト（GitLab連携の移行手順2の `20261005000000-remove-unfurled-mention-data.js`）をまだ実行していなければ実行する。サービスを問わず外部メンションの保存データを取り除く。実行済みなら不要。
+3. 残っているキャッシュを消す（任意）。旧版がチーム共有で取得した結果は最長1分、各ユーザーの「GitHubプラグインが認識しなかった」という印は最長1時間、Redisに残る。本人が連携した時点でその人の分は消えるが、すぐに全員分を消したい場合は次を実行する。
+
+   ```bash
+   docker compose exec redis sh -c "redis-cli --scan --pattern 'unfurl:*' | xargs -r redis-cli del"
+   ```
+
+4. 管理者を含む全員に、設定 → GitHub で自分のGitHubアカウントを連携するよう案内する。連携するまでGitHubのリンクは通常のリンクとして表示される。
+
+### 注意事項
+
+- 上流と違い、本人がGitHubで見えないIssue・プルリクエストは通常のリンクとして表示される。Appがインストールされていないリポジトリも同様。
+- 上流をマージするとき、`plugins/github/` 全体（`server/github.ts` の `unfurl`・トークン処理、`server/api/github.ts` のコールバック、`server/GitHubIssueProvider.ts` の `github_app_authorization` の処理、`server/uninstall.ts`、`client/Settings.tsx`・`client/components/GitHubButton.tsx`・`client/index.tsx`、`shared/GitHubUtils.ts` の `userAuthUrl`）と、上記「本体側の変更」のファイルに差分があれば、この機能を保つように解決する。上流が `github.callback` に管理者チェックを足してきたら、こちらの `can(user, "createIntegration", user.team)` と重複しないようにまとめる。
+- 上流が `GitHub.unfurl` にインストール認証（`authenticateAsInstallation`）を使う変更を足してきたら、取り込まない。インストール認証は `fetchSources`・Webhookの処理・アンインストールにだけ使う。
+
+### 開発・テスト
+
+- `yarn test plugins/github` でOAuthコールバック・展開・Webhook・アンインストールのテストを実行する。GitHub APIはモックする。
 
 ## インラインコメントの強調表示スタイルを設定で切り替える
 

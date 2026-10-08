@@ -5,8 +5,12 @@ import { BaseSchema } from "@server/routes/api/schema";
 export enum SetupAction {
   install = "install",
   request = "request",
+  update = "update",
 }
 
+// The callback completes both the installation of the app by an admin, which
+// carries the installation, and the authorization of a member's own account,
+// which carries a code only.
 export const GitHubCallbackSchema = BaseSchema.extend({
   query: z
     .object({
@@ -14,7 +18,7 @@ export const GitHubCallbackSchema = BaseSchema.extend({
       state: z.string(),
       error: z.string().nullish(),
       installation_id: z.coerce.number().optional(),
-      setup_action: z.enum(SetupAction),
+      setup_action: z.enum(SetupAction).optional(),
     })
     .refine((req) => !(isEmpty(req.code) && isEmpty(req.error)), {
       error: "one of code or error is required",

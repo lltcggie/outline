@@ -7,6 +7,12 @@ declare module "@shared/types" {
       };
     };
   }
+
+  interface LinkedAccountIntegrationSettings {
+    github?: {
+      account: { id: number; name: string; avatarUrl: string };
+    };
+  }
 }
 
 export {};

@@ -40,12 +40,12 @@ if (enabled) {
     {
       type: Hook.UnfurlProvider,
       name: "GitHub",
+      // Cached per user, as resources are fetched with the user's own account.
       value: {
         unfurl: GitHub.unfurl,
         cacheExpiry: Minute.seconds,
-        // Resources are fetched with the workspace's installation, so the
-        // result is the same for every member.
-        cacheScope: "team",
+        // Resources are only fetched with the account linked by the user.
+        userAccess: true,
       },
     },
     {

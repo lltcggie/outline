@@ -1,14 +1,18 @@
 import type { Endpoints } from "@octokit/types";
 import type { components } from "@octokit/openapi-webhooks-types";
 import type { IssueSource } from "@shared/schema";
-import type { IntegrationType } from "@shared/types";
-import { IntegrationService } from "@shared/types";
+import { IntegrationService, IntegrationType } from "@shared/types";
 import Logger from "@server/logging/Logger";
 import { Integration, IntegrationAuthentication } from "@server/models";
 import { sequelize } from "@server/storage/database";
+import { afterCommit } from "@server/storage/transaction";
 import { BaseIssueProvider } from "@server/utils/BaseIssueProvider";
+import { CacheHelper } from "@server/utils/CacheHelper";
+import { RedisPrefixHelper } from "@server/utils/RedisPrefixHelper";
 import { GitHub } from "./github";
 
+type GithubAppAuthorizationRevokedEvent =
+  components["schemas"]["webhook-github-app-authorization-revoked"];
 type InstallationNewPermissionsAcceptedEvent =
   components["schemas"]["webhook-installation-new-permissions-accepted"];
 type InstallationRepositoriesEvent =
@@ -86,8 +90,64 @@ export class GitHubIssueProvider extends BaseIssueProvider {
         break;
       }
 
+      case "github_app_authorization": {
+        if (action === "revoked") {
+          await this.destroyLinkedAccounts(
+            payload as unknown as GithubAppAuthorizationRevokedEvent
+          );
+        }
+        break;
+      }
+
       default:
     }
+  }
+
+  /**
+   * Removes the accounts linked to a GitHub user that revoked the app,
+   * together with their tokens, which GitHub has invalidated. The event is
+   * sent for the app as a whole, so every team is searched. Workspace
+   * integrations are never removed here.
+   *
+   * @param event the webhook payload.
+   */
+  private async destroyLinkedAccounts(
+    event: GithubAppAuthorizationRevokedEvent
+  ) {
+    const githubUserId = event.sender?.id;
+    if (!githubUserId) {
+      Logger.warn(`GitHub github_app_authorization event without sender`);
+      return;
+    }
+
+    await sequelize.transaction(async (transaction) => {
+      const linkedAccounts = await Integration.findAll<
+        Integration<IntegrationType.LinkedAccount>
+      >({
+        where: {
+          service: IntegrationService.GitHub,
+          type: IntegrationType.LinkedAccount,
+          "settings.github.account.id": githubUserId,
+        },
+        lock: transaction.LOCK.UPDATE,
+        transaction,
+      });
+
+      await GitHub.destroyLinkedAccounts(linkedAccounts, { transaction });
+
+      await afterCommit(transaction, async () => {
+        await Promise.all(
+          linkedAccounts.map((linkedAccount) =>
+            CacheHelper.clearData(
+              RedisPrefixHelper.getUnfurlPrefix(
+                linkedAccount.teamId,
+                linkedAccount.userId
+              )
+            )
+          )
+        );
+      });
+    });
   }
 
   private async handleInstallationEvent(
