@@ -328,6 +328,23 @@ outline-search-pgroonga のコンパイル済みプラグインをマウント�
 - プラグインのテストは vitest のプロジェクト `server-pgroonga`（`vitest.config.ts`）で実行する。このプロジェクトはテストDBのサーバーにPGroongaがあるときだけ作られ（無ければその旨の警告が出て、プラグインのテストは実行されない）、`plugins/search-pgroonga/server/globalSetup.ts` がインデックスを作ってからワーカーを起動する。`SEARCH_PROVIDER=pgroonga` で標準プロバイダーのテスト（`plugins/search-postgres/server/PostgresSearchProvider.test.ts`）も実行し、閲覧権限の絞り込み・フィルター・並び順・ページングが標準と同じ期待を満たすことを確かめる。このテストの抜粋の期待値1か所は、両プロバイダーの結果を許す形にしてある。
 - 上流をマージするとき、`plugins/search-postgres/` と `server/utils/BaseSearchProvider.ts` に差分があれば、プラグイン側へ追随させる。`PostgresSearchProvider` の `buildWhere` と `buildTeamWhere`（共有リンクの絞り込みをまとめたもの）はこのフォークで protected にしてプラグインから呼んでおり、上流で名前や引数が変わると `yarn tsc` で止まる。`PGroongaSearchProvider.ts` の `buildRankedOrder` と `buildSnippet` は標準の `buildFindOptions`・`buildResultContext` に対応するので、そちらが変わったら合わせる。`shared/editor/` でノード名や属性（`text`、`mention` の `attrs.type`・`attrs.label`、`br`、`attachment` の `attrs.title`、`image` の `attrs.alt`、`href`）が変わったときは、`pgroongaIndex.ts` の本文抽出関数を直し、インデックス名の版を上げて（`PGROONGA_INDEX_NAME`、旧名は `LEGACY_PGROONGA_INDEX_NAMES` に足す）「インデックス定義の履歴」に書く。
 
+## MCPの `fetch` ツールでドキュメント・テンプレートの本文を分割して返す
+
+### 変更の概要
+
+上流の MCP `fetch` ツールはドキュメントとテンプレートの本文を1つのテキストブロックで丸ごと返すため、長い本文は MCP クライアント（Claude Code・Claude Desktop など）のツール結果の上限を超えて途中で切り捨てられ、エージェントが残りを読めなかった。日本語は英語より1文字あたりのトークン数が多いので、より短い本文でもこの上限に当たる。上流の提案 [outline/outline#13503](https://github.com/outline/outline/pull/13503)（Issue [outline/outline#13502](https://github.com/outline/outline/issues/13502)、未マージ）と同じ仕様を、上流との差分が小さくなる形で実装した。
+
+- `fetch` に `offset`（既定 0）と `limit`（既定 16000、最大 100000。どちらも文字数）を追加した。`resource` が `document` / `template` のときだけ効く。
+- 1つ目のテキストブロック（メタデータ）に `textLength`・`truncated` と、続きがあるときは `nextOffset` が入る。`offset` に `nextOffset` を渡して取り直すと続きを読める。
+- 区切り位置は `server/tools/util.ts` の `paginateText` が決める。続きがある場合は窓の中の最後の改行の直後で切るので、Markdown の行が2ページにまたがらない。窓の中に改行が無い長い行だけは文字数で切るが、サロゲートペア（絵文字など）の途中では切らない。各ページをそのままつなげると元の本文に戻る。
+- 既定で 16000 文字に切られるようになった点は上流からの動作の変更。`truncated` を見ずに本文を使うクライアントは先頭の 16000 文字しか受け取らない。
+
+### 注意事項
+
+- 上流が #13503 か同等の変更を取り込んだら、こちらの変更（`server/tools/fetch.ts` の `offset` / `limit` と `paginateText` の呼び出し、`server/tools/util.ts` の `DEFAULT_FETCH_LIMIT`・`MAX_FETCH_LIMIT`・`paginateText`、両方のテスト）を捨てて上流の版に合わせ、この節を削除する。#13503 はハンドラー全体のインデントを1段深くしているので、そのまま取り込まれた場合は `fetch.ts` がほぼ全体で衝突する。上流の版を採ればよい。
+- ハンドラーの引数は `({ resource, id: rawId, ...page }, extra)` として、`offset` / `limit` を `page` にまとめて `paginateText` に渡している。上流がこのハンドラーに引数を足してきたら、`...page` に混ざらないように分割代入に加える。
+- ページを読み進める間に他の人がドキュメントを編集すると、つなげた結果は一致しない。メタデータの `updatedAt` が変わっていれば読み直す必要がある。
+
 ## バージョンタグでDockerイメージをDocker Hubに公開する
 
 ### 仕組み

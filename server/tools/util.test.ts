@@ -9,6 +9,7 @@ import {
   buildBreadcrumb,
   getBreadcrumbsForDocuments,
   optionalString,
+  paginateText,
   success,
 } from "./util";
 
@@ -42,6 +43,54 @@ describe("success", () => {
   it("wraps a single object in one text block", () => {
     expect(success({ success: true })).toEqual({
       content: [{ type: "text", text: JSON.stringify({ success: true }) }],
+    });
+  });
+});
+
+describe("paginateText", () => {
+  it("returns the whole text when it fits within the limit", () => {
+    expect(paginateText("short text")).toEqual({
+      text: "short text",
+      textLength: 10,
+      truncated: false,
+    });
+  });
+
+  it("ends a truncated page just after the last newline", () => {
+    expect(paginateText("aaa\nbbb\nccc", { limit: 9 })).toEqual({
+      text: "aaa\nbbb\n",
+      textLength: 11,
+      truncated: true,
+      nextOffset: 8,
+    });
+  });
+
+  it("reassembles the full text across pages", () => {
+    const text = Array.from({ length: 50 }, (_, i) => `Line ${i}`).join("\n\n");
+    let assembled = "";
+    let offset: number | undefined = 0;
+
+    while (offset !== undefined) {
+      const page = paginateText(text, { offset, limit: 30 });
+      expect(page.text.length).toBeLessThanOrEqual(30);
+      assembled += page.text;
+      offset = page.nextOffset;
+    }
+
+    expect(assembled).toEqual(text);
+  });
+
+  it("cuts a line longer than the limit without splitting a surrogate pair", () => {
+    const page = paginateText("abc😀def", { limit: 4 });
+    expect(page.text).toEqual("abc");
+    expect(page.nextOffset).toEqual(3);
+  });
+
+  it("returns empty text when the offset is past the end", () => {
+    expect(paginateText("abc", { offset: 10 })).toEqual({
+      text: "",
+      textLength: 3,
+      truncated: false,
     });
   });
 });

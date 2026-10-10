@@ -22,6 +22,8 @@ import {
   getDocumentBreadcrumb,
   getPublicShareUrlForCollection,
   getPublicShareUrlForDocument,
+  MAX_FETCH_LIMIT,
+  paginateText,
   pathToUrl,
   withTracing,
 } from "./util";
@@ -102,7 +104,7 @@ export function fetchTool(server: McpServer, scopes: string[]) {
     {
       title: "Fetch",
       description:
-        'Fetches a document, collection, user, attachment, or template by type and ID. When fetching a collection the response includes the full hierarchical document tree. For users, "current_user" can be used as the ID to get the authenticated user. For attachments, the response includes a short-lived signed URL that can be used to download the file contents directly. For templates, the response includes the template body as markdown.',
+        'Fetches a document, collection, user, attachment, or template by type and ID. When fetching a collection the response includes the full hierarchical document tree. For users, "current_user" can be used as the ID to get the authenticated user. For attachments, the response includes a short-lived signed URL that can be used to download the file contents directly. For templates, the response includes the template body as markdown. Document and template text is paginated: when the metadata has "truncated": true, fetch again with "offset" set to "nextOffset" to read the rest.',
       annotations: {
         idempotentHint: true,
         readOnlyHint: true,
@@ -114,9 +116,26 @@ export function fetchTool(server: McpServer, scopes: string[]) {
           .describe(
             'The unique identifier or URL. For users, "current_user" returns the authenticated user.'
           ),
+        offset: z.coerce
+          .number()
+          .int()
+          .min(0)
+          .optional()
+          .describe(
+            "The character offset to start reading document or template text from. Defaults to 0."
+          ),
+        limit: z.coerce
+          .number()
+          .int()
+          .min(1)
+          .max(MAX_FETCH_LIMIT)
+          .optional()
+          .describe(
+            "The maximum number of characters of document or template text to return. Defaults to 16000."
+          ),
       },
     },
-    withTracing("fetch", async ({ resource, id: rawId }, extra) => {
+    withTracing("fetch", async ({ resource, id: rawId, ...page }, extra) => {
       try {
         const actor = getActorFromContext(extra);
         const id = extractId(rawId);
@@ -141,6 +160,10 @@ export function fetchTool(server: McpServer, scopes: string[]) {
                 getDocumentBreadcrumb(document, actor),
                 getPublicShareUrlForDocument(actor.team, document.id),
               ]);
+            const { text: pageText, ...pagination } = paginateText(
+              typeof text === "string" ? text : "",
+              page
+            );
             return {
               content: [
                 {
@@ -149,11 +172,12 @@ export function fetchTool(server: McpServer, scopes: string[]) {
                     document: pathToUrl(actor.team, attributes),
                     ...(breadcrumb !== undefined && { breadcrumb }),
                     ...(shareUrl !== undefined && { shareUrl }),
+                    ...pagination,
                   }),
                 },
                 {
                   type: "text" as const,
-                  text: typeof text === "string" ? text : "",
+                  text: pageText,
                 },
               ],
             } satisfies CallToolResult;
@@ -228,15 +252,19 @@ export function fetchTool(server: McpServer, scopes: string[]) {
             authorize(actor, "read", template);
 
             const { text, ...attributes } = await presentTemplate(template);
+            const { text: pageText, ...pagination } = paginateText(text, page);
             return {
               content: [
                 {
                   type: "text" as const,
-                  text: JSON.stringify(pathToUrl(actor.team, attributes)),
+                  text: JSON.stringify({
+                    ...pathToUrl(actor.team, attributes),
+                    ...pagination,
+                  }),
                 },
                 {
                   type: "text" as const,
-                  text,
+                  text: pageText,
                 },
               ],
             } satisfies CallToolResult;

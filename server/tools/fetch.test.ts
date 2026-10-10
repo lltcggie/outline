@@ -203,4 +203,80 @@ describe("fetch", () => {
 
     expect(res!.result!.content![1].text).toContain("Body of the template");
   });
+
+  it("paginates long document text with offset and limit", async () => {
+    const { user, accessToken } = await buildOAuthUser();
+    const collection = await buildCollection({
+      teamId: user.teamId,
+      userId: user.id,
+    });
+    const document = await buildDocument({
+      teamId: user.teamId,
+      userId: user.id,
+      collectionId: collection.id,
+      text: Array.from(
+        { length: 1200 },
+        (_, i) => `Line ${i} of a long document used to test pagination.`
+      ).join("\n\n"),
+    });
+
+    const full = await callMcpTool(server, accessToken, "fetch", {
+      resource: "document",
+      id: document.id,
+      limit: 100000,
+    });
+    const fullText = full!.result!.content![1].text!;
+    expect(JSON.parse(full!.result!.content![0].text!).truncated).toBe(false);
+
+    let assembled = "";
+    let offset: number | undefined = 0;
+    let pages = 0;
+
+    while (offset !== undefined) {
+      const res = await callMcpTool(server, accessToken, "fetch", {
+        resource: "document",
+        id: document.id,
+        offset,
+      });
+      const metadata = JSON.parse(res!.result!.content![0].text!);
+      const text = res!.result!.content![1].text!;
+
+      expect(metadata.textLength).toEqual(fullText.length);
+      expect(text.length).toBeLessThanOrEqual(16000);
+      assembled += text;
+      offset = metadata.nextOffset;
+      pages++;
+    }
+
+    expect(pages).toBeGreaterThan(1);
+    expect(assembled).toEqual(fullText);
+  });
+
+  it("paginates long template text", async () => {
+    const { user, accessToken } = await buildOAuthUser();
+    const collection = await buildCollection({
+      teamId: user.teamId,
+      userId: user.id,
+    });
+    const template = await buildTemplate({
+      teamId: user.teamId,
+      userId: user.id,
+      collectionId: collection.id,
+      text: Array.from(
+        { length: 1200 },
+        (_, i) => `Template line ${i} for pagination testing.`
+      ).join("\n\n"),
+    });
+
+    const res = await callMcpTool(server, accessToken, "fetch", {
+      resource: "template",
+      id: template.id,
+    });
+
+    const metadata = JSON.parse(res!.result!.content![0].text!);
+    expect(metadata.id).toEqual(template.id);
+    expect(metadata.truncated).toBe(true);
+    expect(metadata.textLength).toBeGreaterThan(16000);
+    expect(metadata.nextOffset).toEqual(res!.result!.content![1].text!.length);
+  });
 });

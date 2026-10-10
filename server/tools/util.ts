@@ -14,6 +14,17 @@ interface McpContext {
   authInfo?: AuthInfo;
 }
 
+interface TextPage {
+  /** The text within the requested window. */
+  text: string;
+  /** The total length of the full text, in characters. */
+  textLength: number;
+  /** Whether more text follows the returned window. */
+  truncated: boolean;
+  /** The offset to request the next window from, when truncated. */
+  nextOffset?: number;
+}
+
 /**
  * Extracts the authenticated user from the MCP request handler extra object.
  *
@@ -70,6 +81,12 @@ export function optionalString() {
 /** The URI of the MCP resource that lists the available named icons. */
 export const iconNamesResourceUri = "outline://icons";
 
+/** The default number of characters of document or template text returned by a fetch. */
+export const DEFAULT_FETCH_LIMIT = 16000;
+
+/** The maximum number of characters of document or template text a fetch may return. */
+export const MAX_FETCH_LIMIT = 100000;
+
 /**
  * Helper function to format successful MCP tool responses.
  *
@@ -93,6 +110,49 @@ export function success<T>(data: T | T[]): CallToolResult {
       type: "text" as const,
       text: JSON.stringify(item),
     })),
+  };
+}
+
+/**
+ * Returns a window of text for paginated fetches. When more text follows the
+ * window, the end is pulled back to just after the last newline so a markdown
+ * line is not split across pages, and never between a surrogate pair.
+ *
+ * @param text - the full text.
+ * @param options - the window to return.
+ * @param options.offset - the character offset to start from, defaults to 0.
+ * @param options.limit - the maximum number of characters to return, defaults to DEFAULT_FETCH_LIMIT.
+ * @returns the text in the window and metadata describing how to continue.
+ */
+export function paginateText(
+  text: string,
+  {
+    offset = 0,
+    limit = DEFAULT_FETCH_LIMIT,
+  }: { offset?: number; limit?: number } = {}
+): TextPage {
+  const textLength = text.length;
+  let end = Math.min(textLength, offset + limit);
+
+  if (end < textLength) {
+    const newline = text.lastIndexOf("\n", end - 1);
+    if (newline >= offset) {
+      end = newline + 1;
+    } else if (
+      end - 1 > offset &&
+      /[\uD800-\uDBFF]/.test(text.charAt(end - 1))
+    ) {
+      end -= 1;
+    }
+  }
+
+  const truncated = end < textLength;
+
+  return {
+    text: offset < textLength ? text.slice(offset, end) : "",
+    textLength,
+    truncated,
+    ...(truncated && { nextOffset: end }),
   };
 }
 
