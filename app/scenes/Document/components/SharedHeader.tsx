@@ -1,11 +1,10 @@
 import { observer } from "mobx-react";
 import { TableOfContentsIcon } from "outline-icons";
-import { useCallback, useEffect } from "react";
+import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import useMeasure from "react-use-measure";
 import styled from "styled-components";
 import Icon from "@shared/components/Icon";
-import { HEADER_HEIGHT } from "@shared/constants";
 import useShare from "@shared/hooks/useShare";
 import type { PublicTeam } from "@shared/types";
 import { TOCPosition } from "@shared/types";
@@ -24,7 +23,7 @@ import HeaderBranding from "~/components/Sharing/components/HeaderBranding";
 import { useTeamContext } from "~/components/TeamContext";
 import Tooltip from "~/components/Tooltip";
 import env from "~/env";
-import useEditingFocus from "~/hooks/useEditingFocus";
+import useHeaderOffset from "~/hooks/useHeaderOffset";
 import useKeyDown from "~/hooks/useKeyDown";
 import useMobile from "~/hooks/useMobile";
 import useStores from "~/hooks/useStores";
@@ -41,15 +40,7 @@ function SharedDocumentHeader({ document }: Props) {
   const { t } = useTranslation();
   const { ui, shares } = useStores();
   const isMobileMedia = useMobile();
-  const isEditingFocus = useEditingFocus();
-
-  // Set CSS variable for header offset (used by sticky table headers)
-  useEffect(() => {
-    window.document.documentElement.style.setProperty(
-      "--header-offset",
-      isEditingFocus ? "0px" : `${HEADER_HEIGHT}px`
-    );
-  }, [isEditingFocus]);
+  const isEditingFocus = useHeaderOffset();
 
   const { hasHeadings } = useDocumentContext();
   const [measureRef, size] = useMeasure();

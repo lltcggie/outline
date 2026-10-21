@@ -10,7 +10,9 @@ import {
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import styled, { useTheme } from "styled-components";
-import { depths, s } from "@shared/styles";
+import breakpoint from "styled-components-breakpoint";
+import { HEADER_HEIGHT } from "@shared/constants";
+import { s } from "@shared/styles";
 import { altDisplay, isModKey, metaDisplay } from "@shared/utils/keyboard";
 import Button from "~/components/Button";
 import Flex from "~/components/Flex";
@@ -20,34 +22,50 @@ import { ResizingHeightContainer } from "~/components/ResizingHeightContainer";
 import Tooltip from "~/components/Tooltip";
 import {
   Popover,
-  PopoverTrigger,
+  PopoverAnchor,
   PopoverContent,
 } from "~/components/primitives/Popover";
 import { useClearSearchHighlight } from "~/hooks/useClearSearchHighlight";
 import useKeyDown from "~/hooks/useKeyDown";
 import useMobile from "~/hooks/useMobile";
 import Desktop from "~/utils/Desktop";
+import type { Editor } from "../";
 import { useEditor } from "./EditorContext";
 import { HStack } from "~/components/primitives/HStack";
 
+interface PersistedState {
+  open: boolean;
+  currentIndex: number;
+  searchTerm: string;
+  replaceTerm: string;
+  caseSensitive: boolean;
+  regexEnabled: boolean;
+  showReplace: boolean;
+}
+
+// The editor recreates its extensions, and with them this widget, when it
+// switches from read-only to editable. The UI state is kept per editor
+// instance so the panel survives that switch and is released with the editor.
+// The remount itself is wanted: mounting with the restored state re-runs the
+// search against the new extension and view, which start out empty.
+const persistedState = new WeakMap<Editor, PersistedState>();
+
 type KeyboardShortcutsProps = {
   open: boolean;
-  inputRef: React.RefObject<HTMLInputElement | null>;
   handleOpen: ({ withReplace }: { withReplace: boolean }) => void;
-  handleClose: () => void;
   handleCaseSensitive: () => void;
   handleRegex: () => void;
 };
 
 function useKeyboardShortcuts({
   open,
-  inputRef,
   handleOpen,
-  handleClose,
   handleCaseSensitive,
   handleRegex,
 }: KeyboardShortcutsProps) {
-  // Toggle popover
+  // Mod+F opens the popover. When it is already open the shortcut moves focus
+  // back to the search input and selects its text, like the browser's own find
+  // bar. Mod+Alt+F does the same for the replace input.
   useKeyDown(
     (ev) =>
       isModKey(ev) &&
@@ -55,12 +73,6 @@ function useKeyboardShortcuts({
       // Keyboard handler is through the AppMenu on Desktop v1.2.0+
       !(Desktop.bridge && "onFindInPage" in Desktop.bridge),
     (ev) => {
-      // Close and fall through to the browser's find when already focused.
-      if (open && !ev.altKey && document.activeElement === inputRef.current) {
-        handleClose();
-        return;
-      }
-
       ev.preventDefault();
       handleOpen({ withReplace: ev.altKey });
     },
@@ -112,48 +124,57 @@ export default function FindAndReplace({
   totalResults,
 }: Props) {
   const editor = useEditor();
-  const [localOpen, setLocalOpen] = React.useState(open);
+  const [restored] = React.useState(() => persistedState.get(editor));
+  const [localOpen, setLocalOpen] = React.useState(restored?.open ?? open);
   const selectionRef = React.useRef<string | undefined>(undefined);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const inputReplaceRef = React.useRef<HTMLInputElement>(null);
+  // Restoring an open panel must not pull focus away from where the user left
+  // it, so the first automatic focus is suppressed, and the search resumes at
+  // the result the user was on rather than the first one.
+  const skipAutoFocusRef = React.useRef(restored?.open ?? false);
+  const restoredIndexRef = React.useRef(
+    restored?.open ? restored.currentIndex : undefined
+  );
   const { t } = useTranslation();
   const theme = useTheme();
   const clearSearchHighlight = useClearSearchHighlight();
   const isMobile = useMobile();
-  const [showReplace, setShowReplace] = React.useState(false);
-  const [caseSensitive, setCaseSensitive] = React.useState(false);
-  const [regexEnabled, setRegex] = React.useState(false);
-  const [searchTerm, setSearchTerm] = React.useState("");
-  const [replaceTerm, setReplaceTerm] = React.useState("");
+  const [showReplace, setShowReplace] = React.useState(
+    restored?.showReplace ?? false
+  );
+  const [caseSensitive, setCaseSensitive] = React.useState(
+    restored?.caseSensitive ?? false
+  );
+  const [regexEnabled, setRegex] = React.useState(
+    restored?.regexEnabled ?? false
+  );
+  const [searchTerm, setSearchTerm] = React.useState(
+    restored?.searchTerm ?? ""
+  );
+  const [replaceTerm, setReplaceTerm] = React.useState(
+    restored?.replaceTerm ?? ""
+  );
+
+  // Snapshot after every render so a replacement widget always restores the
+  // latest state.
+  React.useEffect(() => {
+    persistedState.set(editor, {
+      open: localOpen,
+      currentIndex,
+      searchTerm,
+      replaceTerm,
+      caseSensitive,
+      regexEnabled,
+      showReplace,
+    });
+  });
 
   React.useEffect(() => {
     if (open) {
       setLocalOpen(true);
     }
   }, [open]);
-
-  // Hooks for desktop app menu items
-  React.useEffect(() => {
-    if (!Desktop.bridge) {
-      return;
-    }
-    if ("onFindInPage" in Desktop.bridge) {
-      Desktop.bridge.onFindInPage(() => {
-        if (document.activeElement === inputRef.current) {
-          setLocalOpen(false);
-          return;
-        }
-        selectionRef.current = window.getSelection()?.toString();
-        setLocalOpen(true);
-      });
-    }
-    if ("onReplaceInPage" in Desktop.bridge) {
-      Desktop.bridge.onReplaceInPage(() => {
-        setShowReplace(true);
-        setLocalOpen(true);
-      });
-    }
-  }, []);
 
   // Callbacks
   const selectInputText = React.useCallback(() => {
@@ -197,7 +218,31 @@ export default function FindAndReplace({
     [localOpen, readOnly, selectInputText, selectInputReplaceText]
   );
 
-  const handleClose = React.useCallback(() => setLocalOpen(false), []);
+  const handleClose = React.useCallback(() => {
+    setLocalOpen(false);
+  }, []);
+
+  // The desktop bridge only allows subscribing once, so keep a ref to the
+  // latest open handler for it to call.
+  const handleOpenRef = React.useRef(handleOpen);
+  handleOpenRef.current = handleOpen;
+
+  // Hooks for desktop app menu items
+  React.useEffect(() => {
+    if (!Desktop.bridge) {
+      return;
+    }
+    if ("onFindInPage" in Desktop.bridge) {
+      Desktop.bridge.onFindInPage(() =>
+        handleOpenRef.current({ withReplace: false })
+      );
+    }
+    if ("onReplaceInPage" in Desktop.bridge) {
+      Desktop.bridge.onReplaceInPage(() =>
+        handleOpenRef.current({ withReplace: true })
+      );
+    }
+  }, []);
 
   const handleMore = React.useCallback(() => {
     setShowReplace((state) => !state);
@@ -352,21 +397,29 @@ export default function FindAndReplace({
 
   useKeyboardShortcuts({
     open: localOpen,
-    inputRef,
     handleOpen,
-    handleClose,
     handleCaseSensitive,
     handleRegex,
   });
 
-  const style: React.CSSProperties = React.useMemo(
-    () => ({
-      position: "fixed",
-      top: 60,
-      right: 16,
-      zIndex: depths.popover,
-    }),
-    []
+  const handleOpenAutoFocus = React.useCallback((ev: Event) => {
+    if (skipAutoFocusRef.current) {
+      skipAutoFocusRef.current = false;
+      ev.preventDefault();
+    }
+  }, []);
+
+  // Radix would otherwise move focus to the (non-existent) trigger on close.
+  // This also fires when the widget unmounts while open, so only a real close
+  // returns focus to the editor.
+  const handleCloseAutoFocus = React.useCallback(
+    (ev: Event) => {
+      ev.preventDefault();
+      if (!localOpen) {
+        editor.view.focus();
+      }
+    },
+    [editor, localOpen]
   );
 
   // Tracks whether the controls were opened, as there is nothing to clear
@@ -380,11 +433,14 @@ export default function FindAndReplace({
       // The find controls take over highlighting from here.
       clearSearchHighlight();
       const startSearchText = selectionRef.current || searchTerm;
+      const startIndex = restoredIndexRef.current;
+      restoredIndexRef.current = undefined;
 
       editor.commands.find({
         text: startSearchText,
         caseSensitive,
         regexEnabled,
+        currentIndex: startIndex,
       });
 
       requestAnimationFrame(() => {
@@ -455,19 +511,17 @@ export default function FindAndReplace({
 
   return (
     <Popover open={localOpen} onOpenChange={setLocalOpen}>
-      <PopoverTrigger>
-        <button
-          type="button"
-          aria-label={t("Find and replace")}
-          style={{ ...style, background: "none", border: 0, padding: 0 }}
-        />
-      </PopoverTrigger>
+      <PopoverAnchor asChild>
+        <Anchor aria-hidden />
+      </PopoverAnchor>
       <PopoverContent
         aria-label={t("Find and replace")}
         width={0}
         minWidth={isMobile ? undefined : 420}
         scrollable={false}
         align="end"
+        onOpenAutoFocus={handleOpenAutoFocus}
+        onCloseAutoFocus={handleCloseAutoFocus}
         onEscapeKeyDown={handleEscape}
         onPointerDownOutside={(ev) => ev.preventDefault()}
         onFocusOutside={(ev) => ev.preventDefault()}
@@ -517,6 +571,13 @@ export default function FindAndReplace({
               </SearchModifiers>
             </StyledInput>
             {!isMobile && controls}
+            {!isMobile && (
+              <Tooltip content={t("Close")} placement="bottom">
+                <ButtonLarge onClick={handleClose} aria-label={t("Close")}>
+                  <CloseIcon color={theme.textSecondary} />
+                </ButtonLarge>
+              </Tooltip>
+            )}
           </Flex>
           {isMobile && (
             <ControlsRow gap={4} align="center">
@@ -568,6 +629,26 @@ export default function FindAndReplace({
     </Popover>
   );
 }
+
+// The invisible anchor sits exactly where the popover should appear so that the
+// positioned wrapper hugs the content. Offsetting the content with margins
+// instead would enlarge the wrapper and swallow clicks on the header. The right
+// offset mirrors the header padding at each breakpoint. The anchor keeps a
+// 1px box because Floating UI stops watching a zero-size reference for
+// movement, and it has to move when the header hides in editing focus mode.
+const Anchor = styled.div`
+  position: fixed;
+  top: var(--header-offset, ${HEADER_HEIGHT}px);
+  right: 16px;
+  width: 1px;
+  height: 1px;
+  visibility: hidden;
+  pointer-events: none;
+
+  ${breakpoint("tablet")`
+    right: 12px;
+  `};
+`;
 
 const SearchModifiers = styled(Flex)`
   margin-right: 4px;

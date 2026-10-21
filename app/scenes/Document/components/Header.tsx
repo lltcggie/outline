@@ -1,12 +1,11 @@
 import { observer } from "mobx-react";
 import { TableOfContentsIcon, EditIcon } from "outline-icons";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import useMeasure from "react-use-measure";
 import styled, { useTheme } from "styled-components";
 import Icon from "@shared/components/Icon";
-import { HEADER_HEIGHT } from "@shared/constants";
 import { s } from "@shared/styles";
 import { altDisplay, metaDisplay } from "@shared/utils/keyboard";
 import { publishDocument } from "~/actions/definitions/documents";
@@ -23,7 +22,7 @@ import Star from "~/components/Star";
 import Tooltip from "~/components/Tooltip";
 import useCurrentTeam from "~/hooks/useCurrentTeam";
 import useCurrentUser from "~/hooks/useCurrentUser";
-import useEditingFocus from "~/hooks/useEditingFocus";
+import useHeaderOffset from "~/hooks/useHeaderOffset";
 import useKeyDown from "~/hooks/useKeyDown";
 import { useLocationSidebarContext } from "~/hooks/useLocationSidebarContext";
 import useMobile from "~/hooks/useMobile";
@@ -76,15 +75,7 @@ function DocumentHeader({
   const user = useCurrentUser({ rejectOnEmpty: false });
   const isMobileMedia = useMobile();
   const isRevision = !!revision;
-  const isEditingFocus = useEditingFocus();
-
-  // Set CSS variable for header offset (used by sticky table headers)
-  useEffect(() => {
-    window.document.documentElement.style.setProperty(
-      "--header-offset",
-      isEditingFocus ? "0px" : `${HEADER_HEIGHT}px`
-    );
-  }, [isEditingFocus]);
+  const isEditingFocus = useHeaderOffset();
 
   const { hasHeadings, editor } = useDocumentContext();
   const sidebarContext = useLocationSidebarContext();

@@ -61,6 +61,7 @@ export default class FindAndReplaceExtension extends Extension<FindAndReplaceOpt
        * @param attrs.text The search query
        * @param attrs.caseSensitive Whether the search should be case sensitive
        * @param attrs.regexEnabled Whether the search should be a regex
+       * @param attrs.currentIndex The result to highlight first, defaults to the first one
        *
        * @returns A command that finds all matching results
        */
@@ -68,7 +69,14 @@ export default class FindAndReplaceExtension extends Extension<FindAndReplaceOpt
         text: string;
         caseSensitive?: boolean;
         regexEnabled?: boolean;
-      }) => this.find(attrs.text, attrs.caseSensitive, attrs.regexEnabled),
+        currentIndex?: number;
+      }) =>
+        this.find(
+          attrs.text,
+          attrs.caseSensitive,
+          attrs.regexEnabled,
+          attrs.currentIndex
+        ),
 
       /**
        * Find and highlight the next matching result in the document
@@ -151,13 +159,15 @@ export default class FindAndReplaceExtension extends Extension<FindAndReplaceOpt
   public find(
     searchTerm: string,
     caseSensitive = this.options.caseSensitive,
-    regexEnabled = this.options.regexEnabled
+    regexEnabled = this.options.regexEnabled,
+    currentIndex = 0
   ): Command {
     return action<Command>((state, dispatch) => {
       this.options.caseSensitive = caseSensitive;
       this.options.regexEnabled = regexEnabled;
       this.searchTerm = regexEnabled ? searchTerm : escapeRegExp(searchTerm);
-      this.currentResultIndex = 0;
+      // Clamped against the results once the search has run.
+      this.currentResultIndex = currentIndex;
 
       dispatch?.(state.tr.setMeta(pluginKey, {}));
       this.expandFoldedTogglesForCurrentMatch();
@@ -344,6 +354,14 @@ export default class FindAndReplaceExtension extends Extension<FindAndReplaceOpt
   @action
   private search(doc: Node) {
     this.results = [];
+    this.collectResults(doc);
+
+    if (this.currentResultIndex >= this.results.length) {
+      this.currentResultIndex = 0;
+    }
+  }
+
+  private collectResults(doc: Node) {
     const mergedTextNodes: (
       | {
           text: string | undefined;
