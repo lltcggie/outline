@@ -380,7 +380,7 @@ git push origin v1.10.1-custom
 | --- | --- |
 | `.github/workflows/docker.yml` | 改造版のタグでDockerイメージを公開する（前節） |
 | `.github/workflows/docker-build.yml` | 上記から呼ばれるビルド本体 |
-| `.github/workflows/ci.yml` | リント・型チェック・テスト。上流は `main` への push で動かすが、フォークでは `main-custom` への push と PR で動くように起動条件を変えてある。`.github/actions/install` はこのワークフローが使う共通処理 |
+| `.github/workflows/ci.yml` | リント・型チェック・テスト。上流は `main` への push で動かすが、フォークでは `main-custom` への push と PR で動くように起動条件を変えてある。`test-server` ジョブは、上流がランナーに同梱の PostgreSQL を起動するのに対し、フォークでは PGroonga 入りのサービスコンテナ（`groonga/pgroonga`）を使う（PGroonga の節を参照）。`.github/actions/install` はこのワークフローが使う共通処理 |
 
 削除したもの（上流の運用専用で、フォークでは不要か害になるもの）:
 
