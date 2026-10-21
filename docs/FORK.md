@@ -15,6 +15,9 @@ GitLab連携のリンクプレビュー（展開・メンション）が、各�
 - 設定済みのGitLabインスタンスのURLは、本人が連携していない場合や解釈できないURLでも、Iframelyなど後続の展開プロバイダーに渡されない。
 - アクセストークン（GitLabの既定では2時間期限）は、連携したワークスペース連携のOAuthアプリケーションでリフレッシュトークンから自動更新される。本人がGitLab側でアプリケーションの認可を取り消すと、次にプレビューを取得したときにGitLabがトークンを拒否（401）し、リフレッシュも `invalid_grant` で拒否されるので、連携は自動的に解除される（ログに `gitlab access of user … was revoked` が出る）。設定 → GitLab を開き直すと「Connect」に戻っているので、連携し直す。この回復処理はGitHub・Asana連携と共通（後述の「注意事項」）。
 - `EDITOR_VERSION` のメジャー番号を上げている（17 → 18）。取得結果を保存する旧クライアントは共同編集サーバーから拒否され、再読み込みを促される。
+- 上流の「カード表示」（URL型メンションの `display: card`）は、ノードに保存された取得結果ではなく閲覧者自身の取得結果で描画する。本人の権限で取得できないURLは、URLだけのカードになる。
+- 本体側の変更（上流のプラグイン分離に合わせた形）: 連携の設定の型は `plugins/gitlab/shared/types.ts`（Embed型の `pending`、LinkedAccount型の `gitlab`）にある。クライアントに返す設定は、`server/utils/PluginManager.ts` の `Hook.IntegrationSettings` に足した `present`（Embed型はURLと `pending` だけを返す）と、上流の `visibleToGuests`（ゲストも自分のアカウントを連携するので有効）で決める。展開プロバイダー（`Hook.UnfurlProvider`）には `cacheScope`（`"team"` はIframelyのように結果が全員同じもの）と `userAccess`（本人が連携したアカウントだけで取得するもの）を足してある。上流はゲストの外部URLの展開をすべて止めているが、フォークでは `userAccess` のプロバイダー（GitLab・GitHub・Asana）に限ってゲストにも展開する（`server/routes/api/urls/urls.ts`）。
+- GitLab APIへの要求は上流の独自クライアント（`plugins/gitlab/server/gitlab.ts` の `request`。上流は Gitbeaker をやめた）で行う。401を見分けるために、失敗は `GitLabRequestError`（`status` を持つ）で投げる。
 
 ### 環境変数
 
@@ -54,7 +57,7 @@ OAuthアプリケーションのスコープ（`read_api read_user`）とコー�
 ### 注意事項
 
 - 移行前に送信済みのWebhookやメールに含まれた内容は回収できない。
-- Linear連携は引き続きワークスペース共有のトークンで取得する。閲覧権限の分離が必要な場合は、この連携を有効にしないこと。GitHub連携とAsana連携（いずれも後述）はユーザー単位で取得する。
+- Linear連携と、上流に追加されたGitea / Forgejo連携は、ワークスペース共有のトークンで取得する（Gitea連携は上流のGitLab連携と同じ作りで、管理者が接続したアカウントの権限でメンバー全員にプレビューが出る）。閲覧権限の分離が必要な場合は、これらの連携を有効にしないこと。GitHub連携とAsana連携（いずれも後述）はユーザー単位で取得する。
 - Iframelyを使わない場合は `IFRAMELY_API_KEY` / `IFRAMELY_URL` を設定しないこと。
 - トークンが401で拒否されたときの回復（連携行と認証行をこの順にロックして再リフレッシュ → 同時に別のリクエストが更新済みならそのトークンを使う → リフレッシュも拒否されたら連携を削除して再連携を促す）は、GitLab・GitHub・Asana連携で共通の `server/utils/linkedAccount.ts` の `requestWithLinkedAccount` が行う。各プラグインの `unfurl` は、リフレッシュ関数と「401か」「失効か」の判定だけを渡す（失効の既定は RFC 6749 の `invalid_grant`、GitHubだけ `bad_refresh_token`）。トークンエンドポイントへの要求自体はサービスごとに違いがある（GitHubはエラーを200で返す）ので共通化していないが、その拒否は共通の `server/utils/OAuthTokenError.ts` の `OAuthTokenError`（OAuthのエラーコードを持つ）で表す。連携の追加・削除後にユーザーまたはチームの展開キャッシュをコミット後に消す処理（失敗は警告ログのみ）も、3連携で共通の `server/utils/unfurlCache.ts` の `clearUnfurlCacheAfterCommit` が行う。OAuthコールバックで連携を保存する処理（既存の連携があれば連携行 → 認証行の順に更新、認証の無い連携は作り直す）も `server/utils/linkedAccount.ts` の `saveLinkedAccount` にまとめてあり、回復処理とロックの順序が食い違ってデッドロックしないよう、各プラグインはこれを使う（重複チェックやワークスペース単位のロックは各プラグイン側）。サービス側で削除・認可取り消しされたユーザーの連携をWebhook（GitLabの `user_destroy`・GitHubの `github_app_authorization`）でまとめて削除する処理も、同ファイルの `removeLinkedAccounts`（連携行をロックして削除し、コミット後にその利用者の展開キャッシュを消す）にまとめてある。ユーザーが連携したアカウントの検索（サービス・チーム・任意でユーザーで絞り、認証行を外部結合）も同ファイルの `findLinkedAccounts` にまとめてあり、各プラグインの `findLinkedAccounts` / `findLinkedAccount` はこれを呼んでから自分の条件（GitLabはインスタンス、Asanaは認証行の有無）で絞る。トークンエンドポイントの応答本文は `OAuthTokenError.ts` の `parseJsonBody` で読み、JSONでない応答（手前のプロキシのページなど）はステータスが200でもステータスと本文を含むエラーにする。上流由来のFigma・Linear連携はこれらの処理を使わない。
 - 連携が自動解除されるのは、GitLabのトークンエンドポイントがリフレッシュを `invalid_grant`（リフレッシュトークンの失効・取り消し）で拒否したときだけ。ワークスペース連携のクライアントシークレットの誤りは `invalid_client` で拒否されるため連携は保持され、ログに `GitLab refused to refresh an access token, check the client id and secret of the OAuth application` がerrorで出る。
@@ -66,7 +69,7 @@ OAuthアプリケーションのスコープ（`read_api read_user`）とコー�
 
 GitHub連携のリンクプレビュー（展開・メンション）を、GitLab連携と同じく各ユーザー自身のGitHub権限で見える情報だけを表示するようにした。上流では、管理者がインストールしたGitHub Appのインストール認証（installation token）でワークスペース全員分を取得していたため、Appをインストールしたリポジトリであれば、GitHub側でアクセス権の無いメンバーでもURLを貼るだけでIssue・プルリクエストの内容が見えていた。
 
-- ワークスペース連携（Embed型）は、GitHub Appをインストールした組織・アカウント（installation）を記録するだけで、展開には使わない。管理者が設定 → GitHub の「Workspace」からAppをインストールする。インストールを完了した管理者自身のアカウントも同時に連携される。`github.callback` でインストールを記録できるのは管理者だけ（上流にはこの確認が無い。メンバーが GitHub 側からインストールを完了すると `install_forbidden` で拒否され、管理者が設定から「Install」をやり直すと既存のインストールが `setup_action=update` で記録される）。同じインストールを二度完了しても連携は1件のまま（アカウント情報だけ更新される）。
+- ワークスペース連携（Embed型）は、GitHub Appをインストールした組織・アカウント（installation）を記録するだけで、展開には使わない。管理者が設定 → GitHub の「Workspace」からAppをインストールする。インストールを完了した管理者自身のアカウントも同時に連携される。`github.callback` でインストールを記録できるのは管理者だけ（上流は同じ確認を403で返すが、フォークでは個人の連携と同じコールバックなので `install_forbidden` へ転送する。メンバーが GitHub 側からインストールを完了すると拒否され、管理者が設定から「Install」をやり直すと既存のインストールが `setup_action=update` で記録される）。加えて上流と同じく、その管理者がGitHub側でインストール先の個人アカウントの本人か、組織の有効な管理者（owner）であることを確認する（`GitHub.canManageInstallation`。そうでなければ `denied`、Appに組織の「Members」読み取り権限が無ければ `missing_permission` で拒否し、インストールも本人のアカウントも記録しない）。同じインストールを二度完了しても連携は1件のまま（アカウント情報だけ更新される）。
 - 各ユーザーは、設定 → GitHub の「Your account」から自分のGitHubアカウントを連携する（GitHub Appのユーザー認可）。プレビューは本人のユーザートークン（user-to-server token）だけで取得され、連携していないユーザーには通常のリンクとして表示される。閲覧者・ゲストも連携できる。GitHubの仕様により、このトークンで見えるのは「本人がアクセスでき」かつ「Appがインストールされている」リポジトリだけなので、Appのインストールは引き続き管理者が行う。
 - 1つのGitHubアカウントはワークスペース内で1人だけが連携できる（GitLab連携と同じ。2人目は `duplicate_account` で拒否される。Asana連携は複数人で連携できる）。
 - 展開キャッシュはユーザー単位。github.com のURLは、ワークスペースにAppのインストールが1つでもあるか本人が連携済みなら、本人が連携していない場合やコミット・ファイルなど解釈できないURLでも、Iframelyなど後続の展開プロバイダーに渡さない。どちらも無いワークスペースでは上流どおり後続に渡す。
@@ -75,7 +78,7 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 - 設定 → GitHub で連携を解除すると、保存していたトークンをGitHub側でも失効させる（失敗しても警告ログのみ）。連携のやり直しで置き換えられたトークンや、重複アカウント・インストールの不一致・保存の失敗で保存されなかったトークンも同じように失効させる。管理者がインストールを解除すると、上流と同じくAppをその組織からアンインストールするが、各ユーザーの連携は残る（トークンはAppのもので、インストールのものではない）。
 - 設定画面はメンバー全員に表示される（`GITHUB_CLIENT_ID` が未設定のときは管理者のみ）。
 - `issueSources`（インストールから到達できるリポジトリの一覧）は上流どおりインストール認証で取得・保存するが、プレビューには使わない。
-- 本体側の変更: `shared/types.ts`（LinkedAccount型の設定に `github`）、`server/models/Integration.ts` の `presentSettings`（LinkedAccount型に `github`）、`server/models/IntegrationAuthentication.ts`（`refreshToken` の型をNULL可に。GitHubだけはAppの設定でリフレッシュトークンの有無が変わるので、無いときはNULLを保存して以前の連携の値を残さない）、`app/stores/IntegrationsStore.ts`（`github` はEmbed型のみ、`githubLinkedAccount` を追加）。クライアントの `Hook.MentionProvider` にGitHubを登録し、貼り付けメニューはワークスペース連携の有無にかかわらず `GITHUB_CLIENT_ID` が設定されていればIssue・プルリクエスト・プロジェクトのURLをその型にする。
+- 本体側の変更: `plugins/github/shared/types.ts`（LinkedAccount型の設定に `github`。クライアントへは上流の `Hook.IntegrationSettings` の `keys: ["github"]` で返り、LinkedAccount型は本人にだけ返る）、`server/models/IntegrationAuthentication.ts`（`refreshToken` の型をNULL可に。GitHubだけはAppの設定でリフレッシュトークンの有無が変わるので、無いときはNULLを保存して以前の連携の値を残さない）、`app/stores/IntegrationsStore.ts`（`github` はEmbed型のみ、`githubLinkedAccount` を追加）。クライアントの `Hook.UrlMentionProvider`（Asana連携の節を参照）にGitHubを登録し、貼り付けメニューはワークスペース連携の有無にかかわらず `GITHUB_CLIENT_ID` が設定されていればIssue・プルリクエスト・プロジェクトのURLをその型にする。
 
 ### 必要なもの（GitHub Appの設定）
 
@@ -85,7 +88,7 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 - 「Request user authorization (OAuth) during installation」: 有効（上流でも必要。無効だとインストール完了時に `code` が渡らず、コールバックが400になる）
 - 「Expire user authorization tokens」: 有効を推奨（既定で有効）。無効にすると期限の無いトークンになり、認可の取り消しは401かWebhookで検出される。
 - Webhook: 上流と同じ（`<OutlineのURL>/api/github.webhooks`、`GITHUB_WEBHOOK_SECRET`）。
-- Permissions: 上流と同じ（Issues・Pull requests・Metadata・Projectsの読み取り）。
+- Permissions: 上流と同じ（Issues・Pull requests・Metadata・Projectsの読み取り）。組織にインストールする場合は、上流がインストール時の確認に使うようになった Organization permissions の「Members」の読み取りも必要（無いと `missing_permission` で拒否される。Appに権限を足したあと、組織のownerがGitHub側で新しい権限を承認する）。記録済みのインストールには影響しない。
 
 ### 環境変数
 
@@ -132,7 +135,7 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 
 ### 注意事項
 
-- 上流をマージするとき、`shared/types.ts`（`CommentMarkStyle`、`UserPreference.CommentMarkStyle`、`TeamPreference.CommentMarkStyle`）、`shared/constants.ts` の `TeamPreferenceDefaults`、`server/routes/api/users/schema.ts`・`server/routes/api/teams/schema.ts` の `preferences` スキーマ（`strictObject` なので、項目が無いと保存時に拒否される）、`shared/styles/theme.ts` と `app/typings/styled-components.d.ts` のテーマ項目、`app/models/User.ts` の `commentMarkStyle`、`app/hooks/useBuildTheme.ts`・`app/components/Theme.tsx`・`app/scenes/Shared/index.tsx`（共有ページのテーマにも渡す）、`shared/editor/components/Styles.ts` の `commentMarkDecoration`、`app/editor/index.tsx` の `EditorContainer`、サイドバー引用の縦線色 `app/scenes/Document/components/Comments/HighlightText.ts`、設定画面（`app/scenes/Settings/Details.tsx`・`Preferences.tsx`、共通の選択肢 `app/hooks/useCommentMarkStyleOptions.ts`）に差分があれば、この機能を保つように解決する。
+- 上流をマージするとき、`shared/types/team.ts`・`shared/types/user.ts`（`CommentMarkStyle`、`UserPreference.CommentMarkStyle`、`TeamPreference.CommentMarkStyle`）、`shared/constants.ts` の `TeamPreferenceDefaults`、`server/routes/api/users/schema.ts`・`server/routes/api/teams/schema.ts` の `preferences` スキーマ（`strictObject` なので、項目が無いと保存時に拒否される）、`shared/styles/theme.ts` と `app/typings/styled-components.d.ts` のテーマ項目、`app/models/User.ts` の `commentMarkStyle`、`app/hooks/useBuildTheme.ts`・`app/components/Theme.tsx`・`app/scenes/Shared/index.tsx`（共有ページのテーマにも渡す）、`shared/editor/components/Styles.ts` の `commentMarkDecoration`、`app/editor/index.tsx` の `EditorContainer`、サイドバー引用の縦線色 `app/scenes/Document/components/Comments/HighlightText.ts`、設定画面（`app/scenes/Settings/Details.tsx`・`Preferences.tsx`、共通の選択肢 `app/hooks/useCommentMarkStyleOptions.ts`）に差分があれば、この機能を保つように解決する。
 - 上流がコメントマークのクラス名（`EditorStyleHelper.comment`）や `data-resolved`・`data-draft`・`data-user-id` 属性を変えたら、`Styles.ts` の `commentMarkStyle` のセレクターを合わせる。
 
 ## 日付と時刻の表示形式を設定で切り替える
@@ -148,12 +151,12 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 - 描画は `shared/utils/DateTimeFormatter.ts` の `DateTimeFormatter` に集約した。すべて `Intl.DateTimeFormat` で描く。`locale` は言語の長い書式、明示的な日付形式は `en-US` の数値部品（`formatToParts`）を年月日の順序と区切りで並べ直したもので、時刻は `hourCycle` で 12/24 時間を切り替える。変更履歴の一覧のように年を省く箇所は `{ year: false }` を渡す（`locale` なら短い月名、明示形式なら年の部分だけ落ちる）。曜日だけが要る箇所は `formatWeekday`。`Intl.DateTimeFormat` の生成は重いので、インスタンスごとに書式の組み合わせ単位でキャッシュしている。
 - 日付はユーザーの `timezone`（`AuthStore` がブラウザのタイムゾーンと同期している）で描く。サーバー経由のテンプレート作成や Asana の期限でも、サーバープロセスではなくユーザーのタイムゾーンで日付が決まる（上流はサーバーのタイムゾーンだった）。無効なタイムゾーンや言語タグは生成時に一度だけ検証して無視する。
 - 有効な形式の解決（ユーザー設定 → チーム設定 → `TeamPreferenceDefaults`）は `DateTimeFormatter.fromPreferences` の一箇所にある。`User` モデルの `dateTimeFormatter` がこれを呼ぶだけで、クライアント（`app/models/User.ts`。`keepAlive` の computed で、observer でない `Time` コンポーネントからの読み出しでも再計算されない）はログインユーザーのチーム、サーバー（`server/models/User.ts`）は `team` が読み込まれていればそのチームの既定値に従う。コンポーネントからは `app/hooks/useDateTimeFormatter.ts` で取り出し、ログインしていなければ `DateTimeFormatter.default`（実行環境のロケール）になる。
-- 反映される箇所: `<Time relative={false}>` の本文と、すべての `<Time>` のホバーに出る絶対日時（`useLocaleTime.ts`）、変更履歴の「比較対象」ドロップダウン（`HighlightChangesControl.tsx`）、APIキーの有効期限（`app/utils/date.ts` の `dateToExpiry`、`ExpiryDatePicker.tsx`）、各連携の設定画面の接続日、ユーザーのホバーカードの現地時刻（`User.localTime`）、テンプレート変数 `{date}` `{time}` `{datetime}` の置き換え（`shared/utils/TextHelper.ts`。`name` と `dateTimeFormatter` を持つユーザーを受け取るので、クライアント・サーバーどちらで作成しても作成者の設定に従う。置き換え後はプレーンテキストなので、後から設定を変えても変わらない）、タイトル欄の `/date` `/time` `/datetime`（`DocumentTitle.tsx`）とエディター拡張 `DateTime.ts` の同名コマンド（`app/components/Editor.tsx` がエディターの `dateTimeFormatter` prop で渡し、コマンド実行時に読む。渡されなければ `DateTimeFormatter.default`）、Asana 連携のタスクの期限（`plugins/asana/server/asana.ts`。取得する本人の設定に従う。期限は時刻を持たない暦日で `parseISODate` がサーバーのローカル深夜に解決するので、`formatDate` の `timeZone` オプションでその同じゾーンのまま描き、本人のタイムゾーンで前日にずれないようにしている）。サーバー側の `User.dateTimeFormatter` は `team` が読み込まれていないとワークスペース既定値を使えないので、その場合は警告ログを出す。上流の `shared/utils/date.ts` にあった `getCurrentDateAsString` などの3関数は、これらに置き換えたので削除した。
+- 反映される箇所: `<Time relative={false}>` の本文と、すべての `<Time>` のホバーに出る絶対日時（`useLocaleTime.ts`）、変更履歴の「比較対象」ドロップダウン（`HighlightChangesControl.tsx`）、APIキーと共有リンクの有効期限（`app/utils/date.ts` の `dateToExpiry`、`app/components/ExpiryDatePicker.tsx`、共有リンクの期限切れの通知 `ShareExpiredNotice.tsx`、設定の共有リンク一覧 `SharesTable.tsx`）、各連携の設定画面の接続日、ユーザーのホバーカードの現地時刻（`User.localTime`）、テンプレート変数 `{date}` `{time}` `{datetime}` の置き換え（`shared/utils/TextHelper.ts`。`name` と `dateTimeFormatter` を持つユーザーを受け取るので、クライアント・サーバーどちらで作成しても作成者の設定に従う。置き換え後はプレーンテキストなので、後から設定を変えても変わらない）、タイトル欄の `/date` `/time` `/datetime`（`DocumentTitle.tsx`）とエディター拡張 `DateTime.ts` の同名コマンド（`app/components/Editor.tsx` がエディターの `dateTimeFormatter` prop で渡し、コマンド実行時に読む。渡されなければ `DateTimeFormatter.default`）、Asana 連携のタスクの期限（`plugins/asana/server/asana.ts`。取得する本人の設定に従う。期限は時刻を持たない暦日で `parseISODate` がサーバーのローカル深夜に解決するので、`formatDate` の `timeZone` オプションでその同じゾーンのまま描き、本人のタイムゾーンで前日にずれないようにしている）。サーバー側の `User.dateTimeFormatter` は `team` が読み込まれていないとワークスペース既定値を使えないので、その場合は警告ログを出す。上流の `shared/utils/date.ts` にあった `getCurrentDateAsString` などの3関数は、これらに置き換えたので削除した。
 - 「3分前」のような相対表示は変えていない。日付メンション（`shared/editor/nodes/Mention.tsx` の `dateToReadable`）も変えていない。メール・エクスポート・公開共有ページに含まれる日付メンションは閲覧者の情報が渡らない経路なので、対応するなら別途その経路の追修が要る。
 
 ### 注意事項
 
-- 上流をマージするとき、`shared/types.ts`（`DateFormat`、`TimeFormat`、`UserPreference` / `TeamPreference` の `DateFormat` / `TimeFormat`）、`shared/constants.ts` の `TeamPreferenceDefaults`、`server/routes/api/users/schema.ts`・`server/routes/api/teams/schema.ts` の `preferences` スキーマ（`strictObject` なので、項目が無いと保存時に拒否される）、`app/models/User.ts`・`server/models/User.ts` の `dateTimeFormatter`、`app/editor/index.tsx` の `dateTimeFormatter` prop と `app/components/Editor.tsx` での受け渡し、`app/hooks/useLocaleTime.ts`（上流の `format` prop は `year` / `time` prop に置き換えてある。上流が `format={{ en_US: ... }}` を渡す呼び出しを足してきたら `year` / `time` に読み替える）、設定画面（`app/scenes/Settings/Details.tsx`・`Preferences.tsx`、共通の選択肢 `app/hooks/useDateTimeFormatOptions.ts`）に差分があれば、この機能を保つように解決する。
+- 上流をマージするとき、`shared/types/team.ts`・`shared/types/user.ts`（`DateFormat`、`TimeFormat`、`UserPreference` / `TeamPreference` の `DateFormat` / `TimeFormat`）、`shared/constants.ts` の `TeamPreferenceDefaults`、`server/routes/api/users/schema.ts`・`server/routes/api/teams/schema.ts` の `preferences` スキーマ（`strictObject` なので、項目が無いと保存時に拒否される）、`app/models/User.ts`・`server/models/User.ts` の `dateTimeFormatter`、`app/editor/index.tsx` の `dateTimeFormatter` prop と `app/components/Editor.tsx` での受け渡し、`app/hooks/useLocaleTime.ts`（上流の `format` prop は `year` / `time` prop に置き換えてある。上流が `format={{ en_US: ... }}` を渡す呼び出しや、date-fns の `format(date, "MMM dd, yyyy")` で絶対日付を書く箇所を足してきたら、`year` / `time` や `useDateTimeFormatter` に読み替える）、設定画面（`app/scenes/Settings/Details.tsx`・`Preferences.tsx`、共通の選択肢 `app/hooks/useDateTimeFormatOptions.ts`）に差分があれば、この機能を保つように解決する。
 - 上流が `app/utils/date.ts` の `dateToExpiry`（ロケールの代わりに `DateTimeFormatter` を受け取る）や `shared/utils/TextHelper.ts`・`shared/utils/ProsemirrorHelper.ts` の `replaceTemplateVariables`（`TemplateVariablesUser` を受け取る）の引数を変えたら、こちらの形に合わせ直す。上流が `getCurrentDateAsString` などを使う箇所を足してきたら `DateTimeFormatter` に読み替える。
 - 新しい文言の日本語訳は `shared/i18n/locales/ja_JP/translation.json` に手で追加してある（翻訳ポータルは上流専用でフォークからは使えない）。英語カタログは `node_modules/.bin/i18next --silent '{shared,app,server,plugins}/**/*.{ts,tsx}'` で抽出するが、Windows で実行すると改行が CRLF になるので `sed -i 's/\r$//'` で戻し、ファイル走査順の違いで既存キーが移動していたら元の位置に戻す。
 
@@ -166,11 +169,11 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 - 管理者はAsanaのOAuthアプリケーションを作り、環境変数 `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` を設定する。各ユーザーは設定 → Asana の「Connect」で自分のAsanaアカウントを連携する（閲覧者・ゲストも可）。プレビューは本人のトークンだけで取得され、連携していないユーザーには通常のリンクとして表示される。1つのAsanaアカウントを複数のOutlineアカウントが連携してもよく、各ユーザーが自分のトークンを持つ（GitLab連携は1人だけ）。
 - タスクはIssue型のメンションとして表示される（GitLabのIssueと同じ見た目）。インラインでは完了状態のアイコン・タスク名・セクション名、ホバーでは担当者・期限・説明（ノート）・所属するプロジェクトとセクションのラベル（プロジェクトの色付き）が出る。プロジェクトはProject型として、プロジェクトの色・名前・完了タスクの割合を表示し、ホバーでは説明・状態（アクティブ／アーカイブ）・オーナー・期日が出る。別リポジトリ版はURL型（汎用リンク表示）だった。
 - 表示文言（「担当」「期限」「完了」など）は閲覧者の言語設定で翻訳される。別リポジトリ版は日本語の直書きだった。
-- 貼り付けメニューの「メンション」は、連携の有無にかかわらず `ASANA_CLIENT_ID` が設定されていればタスク・プロジェクトのURLをIssue型・Project型にする。クライアントの `PluginManager` に `Hook.MentionProvider` を追加し、`plugins/asana/client/index.tsx` が登録したものを `app/utils/mention.ts` の `getMentionTypeForURL` が参照する。Markdown・API・MCPで作られたメンションはサーバー側の `MentionProvider` で型が決まる。
+- 貼り付けメニューの「メンション」は、連携の有無にかかわらず `ASANA_CLIENT_ID` が設定されていればタスク・プロジェクトのURLをIssue型・Project型にする。クライアントの `PluginManager` に `Hook.UrlMentionProvider` を追加し（上流の `Hook.MentionProvider` はワークスペース連携ごとに判定するもので、連携を持たないサービスには使えない）、`plugins/asana/client/index.tsx` が登録したものを `app/utils/mention.ts` の `getMentionTypeForURL` が参照する。Markdown・API・MCPで作られたメンションはサーバー側の `MentionProvider` で型が決まる。
 - 展開キャッシュはユーザー単位。`app.asana.com` のURLは、本人が連携していない場合や、受信トレイ・検索など解釈できないURLでも、Iframelyなど後続の展開プロバイダーに渡さない。`http://` で貼られたリンクも同じタスク・プロジェクトとして扱う（Asanaがhttpsにリダイレクトするため）。
 - アクセストークンは1時間で期限切れになり、リフレッシュトークンで自動更新される。Asana側でアプリの認可を取り消すと、次にプレビューを取得したときにAsanaがトークンを拒否（401）し、リフレッシュも拒否されるので、連携は自動的に解除される（ログに `asana access of user … was revoked` が出る）。この回復処理はGitLab・GitHub連携と共通の `server/utils/linkedAccount.ts`（GitLab連携の「注意事項」参照）。設定 → Asana を開き直すと「Connect」に戻っているので、連携し直す。
 - プロジェクトの完了タスクの割合は `task_counts` エンドポイントで取得する。このエンドポイントは他より厳しいレート制限が掛かるため、取得できなかったときは割合だけを省いてプロジェクトを表示する。
-- 本体側の変更: `IntegrationService.Asana` の追加、`IssueTrackerIntegrationService` へのAsanaの追加とタスク用のステータスアイコン（`shared/components/IssueStatusIcon/AsanaIssueStatusIcon.tsx`）、展開結果のURLからサービスを判定する `shared/utils/integrations.ts`（メンションとホバープレビューで重複していた判定をまとめた）、LinkedAccount型の `presentSettings` へのAsanaアカウントの追加。環境変数は本体の `Environment` クラスで検証する。別リポジトリ版にあった起動ログの独自出力、data URIのアイコン、独自の環境変数パーサーは不要になった。
+- 本体側の変更: `IntegrationService.Asana` の追加、タスク用のステータスアイコン（`shared/components/IssueStatusIcon/AsanaIssueStatusIcon.tsx`）。上流はステータスアイコンを展開結果の `state` だけから選ぶようになったので、`IssueStatusIcon` に `url` prop を足し、AsanaのURL（`shared/utils/integrations.ts` の `isAsanaUrl`）のときだけこのアイコンを使う。LinkedAccount型の設定の型は `plugins/asana/shared/types.ts` にあり、`Hook.IntegrationSettings` の `keys: ["asana"]` で本人にだけ返る。環境変数は本体の `Environment` クラスで検証する。別リポジトリ版にあった起動ログの独自出力、data URIのアイコン、独自の環境変数パーサーは不要になった。
 
 ### 必要なもの
 
@@ -215,7 +218,7 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 - 旧版と違い、本人から見えないタスクは通常のリンクとして表示される（旧版は共有トークンから見えないタスクが通常のリンクになっていた）。
 - Asanaのノート（notes）はプレーンテキストだが、ホバープレビューの説明はMarkdownとして描画される。そのため `plugins/asana/server/asana.ts` の `escapeMarkdown` で記号をエスケープし、改行を保ったまま渡している（300文字に切り詰めた後にエスケープするので、エスケープ分は上限に数えない）。
 - タスクの作成者名は、Asana APIが本人以外の作成者名を返さない場合は取れない。そのときホバーには作成者なしで「作成 〜前」とだけ表示される（`app/components/HoverPreview/HoverPreviewIssue.tsx` を変更）。
-- 上流をマージするとき、`shared/types.ts`（`IntegrationService.Asana`・`IssueTrackerIntegrationService`・LinkedAccount型の設定）、`server/models/Integration.ts` の `presentSettings`、`shared/components/IssueStatusIcon/index.tsx`、`shared/utils/integrations.ts` とその呼び出し元（`shared/editor/components/Mentions.tsx`・`app/components/HoverPreview/HoverPreviewIssue.tsx`）、`app/utils/PluginManager.ts` の `Hook.MentionProvider`、`app/utils/mention.ts` の `getMentionTypeForURL` とその呼び出し元（`app/editor/components/PasteMenu.tsx`）に差分があれば、Asana分を保つように解決する。
+- 上流をマージするとき、`shared/types/integrations.ts`（`IntegrationService.Asana`）、`shared/components/IssueStatusIcon/index.tsx`（`url` prop）、`shared/utils/integrations.ts` とその呼び出し元（`shared/editor/components/Mentions.tsx`・`app/components/HoverPreview/HoverPreviewIssue.tsx`）、`app/utils/PluginManager.ts` の `Hook.UrlMentionProvider`、`app/utils/mention.ts` の `getMentionTypeForURL` とその呼び出し元（`app/editor/components/PasteMenu.tsx`）に差分があれば、Asana分を保つように解決する。
 - 上流が `UnfurlResponse` のIssue型・Project型の項目を変えたら、`plugins/asana/server/asana.ts` の `unfurlTask`・`unfurlProject` を合わせる（`satisfies` で `yarn tsc` が止まる）。
 - 連携が自動解除されるのは、Asanaのトークンエンドポイントがリフレッシュを `invalid_grant`（リフレッシュトークンの失効・取り消し。共通の回復処理の既定の判定）で拒否したときだけ。`ASANA_CLIENT_SECRET` の誤りやローテーション漏れは `invalid_client` で拒否されるため連携は保持され、ログに `Asana refused to refresh an access token, check ASANA_CLIENT_ID and ASANA_CLIENT_SECRET` がerrorで出る。アクセストークンは1時間で切れるので、シークレットを替えたら環境変数も同時に更新すること。
 - OAuthアプリケーションや `ASANA_OAUTH_SCOPES` に必要なスコープが無いと、Asanaは403で `The following scopes must be present …` を返す。このときはログに `Asana refused the request for a missing OAuth scope` がwarnで出る（本人に見えないタスク・プロジェクトの403・404はdebugのみ）。Asanaが既存のエンドポイントにスコープ要件を追加したときもこの形で現れる。
@@ -380,7 +383,7 @@ git push origin v1.10.1-custom
 | --- | --- |
 | `.github/workflows/docker.yml` | 改造版のタグでDockerイメージを公開する（前節） |
 | `.github/workflows/docker-build.yml` | 上記から呼ばれるビルド本体 |
-| `.github/workflows/ci.yml` | リント・型チェック・テスト。上流は `main` への push で動かすが、フォークでは `main-custom` への push と PR で動くように起動条件を変えてある。`.github/actions/install` はこのワークフローが使う共通処理 |
+| `.github/workflows/ci.yml` | リント・型チェック・テスト。上流は `main` への push で動かすが、フォークでは `main-custom` への push と PR で動くように起動条件を変えてある。`test-server` ジョブは、上流がランナーに同梱の PostgreSQL を起動するのに対し、フォークでは PGroonga 入りのサービスコンテナ（`groonga/pgroonga`）を使う（PGroonga の節を参照）。`.github/actions/install` はこのワークフローが使う共通処理 |
 
 削除したもの（上流の運用専用で、フォークでは不要か害になるもの）:
 
