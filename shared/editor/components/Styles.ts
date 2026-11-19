@@ -1745,6 +1745,57 @@ p {
   justify-content: center;
 }
 
+/* A table cell has no gutter beside it: indicators placed past its edge land
+   on the next column, or outside the table where they widen its scrollable
+   area. Keep them inside the cell instead, floated at the end of the commented
+   line with the text wrapping around them. Each cell sets where its own
+   indicators go, so that a table nested in the cell is not affected. */
+td,
+th {
+  --comment-gutter-float: inline-end;
+  --comment-gutter-margin: 8px 0;
+}
+
+/* Stay clear of the filter button that appears at the end of a header cell on
+   hover. A cell with an active filter already pads that space itself. */
+th:has(> .${EditorStyleHelper.tableFilterButton}:not(.active)) {
+  --comment-gutter-margin: 8px 20px;
+}
+
+/* Text aligned to the end of the cell keeps that edge, so that a commented
+   value still lines up with the rest of its column. */
+:is(td, th)[style*="text-align: right"]:dir(ltr),
+:is(td, th)[style*="text-align: left"]:dir(rtl) {
+  --comment-gutter-float: inline-start;
+  --comment-gutter-margin: 0 8px;
+}
+
+td .${EditorStyleHelper.commentGutter},
+th .${EditorStyleHelper.commentGutter} {
+  position: static;
+  float: var(--comment-gutter-float);
+  margin-inline: var(--comment-gutter-margin);
+
+  /* Center the indicator, which is 22px tall, on the first line. The line is
+     taller than that in a heading. */
+  margin-block-start: max(0px, calc((1lh - 22px) / 2));
+
+  /* Several threads share the line while the cell has room for them. */
+  flex-direction: row;
+  flex-wrap: wrap;
+  max-inline-size: calc(100% - 8px);
+
+  @media print {
+    display: none;
+  }
+}
+
+/* A cell with a background color has a text color that is readable on it. */
+:is(td, th)[data-bgcolor] .${EditorStyleHelper.commentGutter} button:not(:hover) {
+  color: inherit;
+  opacity: 0.7;
+}
+
 .heading-content a,
 p a {
   color: ${props.theme.text};
