@@ -723,12 +723,36 @@ describe("#membershipDocumentIds", () => {
   });
 });
 
+describe("#getPath", () => {
+  it("should return only the urlId under /doc, whatever the title", () => {
+    const urlId = "abcdefghij";
+    for (const title of ["Getting Started", "テスト用ページ", ""]) {
+      expect(Document.getPath({ title, urlId })).toBe("/doc/abcdefghij");
+    }
+  });
+});
+
 describe("#findByPk", () => {
   it("should return document when urlId is correct", async () => {
     const document = await buildDocument();
     const id = `${slugify(document.title)}-${document.urlId}`;
     const response = await Document.findByPk(id);
     expect(response?.id).toBe(document.id);
+  });
+
+  it("should return document when the slug prefix does not match the title", async () => {
+    const document = await buildDocument({ title: "Getting Started" });
+    expect(document.path).toBe(`/doc/${document.urlId}`);
+
+    for (const prefix of [
+      "getting-started-",
+      "44og44k544oi55so44oa44o844k4-",
+      "old-title-",
+      "-",
+    ]) {
+      const response = await Document.findByPk(`${prefix}${document.urlId}`);
+      expect(response?.id).toBe(document.id);
+    }
   });
 
   it("should return document when urlId is given without the slug prefix", async () => {

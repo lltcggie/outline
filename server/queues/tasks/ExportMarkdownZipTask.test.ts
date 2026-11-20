@@ -67,6 +67,72 @@ describe("ExportMarkdownZipTask", () => {
     }
   });
 
+  it.each([
+    ["only the urlId", false],
+    ["a title", true],
+  ])(
+    "should replace links to a document written with any title when the tree stores %s",
+    async (_name, storedWithTitle) => {
+      const team = await buildTeam();
+      const user = await buildUser({ teamId: team.id });
+      const collection = await buildCollection({
+        teamId: team.id,
+        createdById: user.id,
+      });
+      const target = await buildDocument({
+        teamId: team.id,
+        userId: user.id,
+        collectionId: collection.id,
+        title: "テスト用ページ",
+      });
+      const links = [
+        target.path,
+        `/doc/44og44k544oi55so44oa44o844k4-${target.urlId}`,
+        `/doc/old-title-${target.urlId}`,
+      ];
+      const source = await buildDocument({
+        teamId: team.id,
+        userId: user.id,
+        collectionId: collection.id,
+        title: "Source",
+        text: links.map((link) => `[link](${link})`).join("\n\n"),
+      });
+      for (const document of [target, source]) {
+        await collection.addDocumentToStructure(document);
+      }
+      if (storedWithTitle) {
+        // As stored by a version that still put the title in the url.
+        collection.documentStructure = (collection.documentStructure ?? []).map(
+          (node) =>
+            node.id === target.id
+              ? { ...node, url: `/doc/stored-title-${target.urlId}` }
+              : node
+        );
+        await collection.save();
+      }
+      const fileOperation = await buildFileOperation({
+        teamId: team.id,
+        userId: user.id,
+      });
+
+      const task = new ExportMarkdownZipTask();
+      const filePath = await task.exportCollections(
+        [collection],
+        fileOperation
+      );
+
+      try {
+        const contents = await readZipContents(filePath);
+        const text = contents[`${collection.name}/Source.md`];
+        const relativePath = encodeURI("./テスト用ページ.md");
+        expect(text.split(relativePath)).toHaveLength(links.length + 1);
+        expect(text).not.toContain("/doc/");
+      } finally {
+        await fs.remove(filePath);
+      }
+    }
+  );
+
   it("should stream attachment contents into the zip file", async () => {
     const { collection, attachment, fileOperation } =
       await buildDocumentWithAttachment();

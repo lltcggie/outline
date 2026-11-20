@@ -54,7 +54,6 @@ import { CollectionPermission, NavigationNodeType } from "@shared/types";
 import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import { UrlHelper } from "@shared/utils/UrlHelper";
 import { sortNavigationNodes } from "@shared/utils/collections";
-import slugify from "@server/utils/slugify";
 import {
   CollectionValidation,
   DeprecationValidation,
@@ -338,21 +337,15 @@ class Collection extends ParanoidModel<
   }
 
   /**
-   * Returns the frontend path for a collection.
+   * Returns the frontend path for a collection. The path holds only the urlId,
+   * which is all that identifies the collection; the name is accepted so that
+   * callers do not differ from upstream, and is not used.
    *
-   * @param name The collection name.
    * @param urlId The collection URL ID.
    * @returns the frontend path for the collection.
    */
-  static getPath({ name, urlId }: { name: string; urlId: string }): string {
-    if (!name) {
-      return `/collection/untitled-${urlId}`;
-    }
-    const slugifiedName = slugify(name);
-    if (!slugifiedName) {
-      return `/collection/untitled-${urlId}`;
-    }
-    return `/collection/${slugifiedName}-${urlId}`;
+  static getPath({ urlId }: { name: string; urlId: string }): string {
+    return `/collection/${urlId}`;
   }
 
   /**

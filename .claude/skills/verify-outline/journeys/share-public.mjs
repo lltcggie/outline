@@ -1,6 +1,6 @@
 // Publish a document to the web from the Share dialog, then open the public
 // link in a signed-out browser context and read the content.
-// Args: doc= (document path such as /doc/slug-id, required), expect= (body text
+// Args: doc= (document path such as /doc/<urlId>, required), expect= (body text
 // the public page must show, required).
 export default async ({ page, click, context, step, psql, literal, args, log }) => {
   if (!args.doc || !args.expect) {

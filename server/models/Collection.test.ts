@@ -48,23 +48,15 @@ describe("#url", () => {
     const collection = new Collection({
       id: "1234",
     });
-    expect(collection.path).toBe(`/collection/untitled-${collection.urlId}`);
+    expect(collection.path).toBe(`/collection/${collection.urlId}`);
   });
 
-  it("should return correct url with slugified collection name", () => {
-    const path = Collection.getPath({
-      name: "Test Collection",
-      urlId: "abcdefghij",
-    });
-    expect(path).toBe("/collection/test-collection-abcdefghij");
-  });
-
-  it("should return untitled when collection name is empty", () => {
-    const path = Collection.getPath({
-      name: "",
-      urlId: "abcdefghij",
-    });
-    expect(path).toBe("/collection/untitled-abcdefghij");
+  it("should return only the urlId, whatever the name", () => {
+    for (const name of ["Test Collection", "開発チーム", ""]) {
+      expect(Collection.getPath({ name, urlId: "abcdefghij" })).toBe(
+        "/collection/abcdefghij"
+      );
+    }
   });
 });
 

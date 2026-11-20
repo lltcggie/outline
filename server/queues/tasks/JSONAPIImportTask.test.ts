@@ -430,7 +430,7 @@ describe("JSONAPIImportTask", () => {
     const linkParagraph = docOne!.content?.content?.[1];
     const linkText = linkParagraph?.content?.[0];
     const linkMark = linkText?.marks?.find((m) => m.type === "link");
-    expect(linkMark?.attrs?.href).toBe(`/doc/document-2-${docTwo!.urlId}`);
+    expect(linkMark?.attrs?.href).toBe(`/doc/${docTwo!.urlId}`);
     expect(linkMark?.attrs?.href).not.toContain(zip.documentTwoUrlId);
   });
 

@@ -1,6 +1,7 @@
 import path from "node:path";
 import { escapeRegExp } from "es-toolkit/compat";
 import type { ZipFile } from "yazl";
+import { UrlHelper } from "@shared/utils/UrlHelper";
 import { errToString } from "@shared/utils/error";
 import type { NavigationNode } from "@shared/types";
 import { FileOperationFormat } from "@shared/types";
@@ -194,7 +195,10 @@ export default abstract class ExportDocumentTreeTask extends ExportTask {
     ];
     internalLinks.forEach((match) => {
       const matchedLink = match[0];
-      const matchedDocPath = pathMap.get(matchedLink);
+
+      // Paths hold only the urlId, a link written with a title is found by it.
+      const matchedDocPath =
+        pathMap.get(matchedLink) ?? pathMap.get(`/doc/${match[1]}`);
 
       if (matchedDocPath) {
         const relativePath = path.relative(textPathInZip, matchedDocPath);
@@ -456,6 +460,14 @@ export default abstract class ExportDocumentTreeTask extends ExportTask {
       }
 
       map.set(node.url, filePath);
+
+      // A url stored by another version may still include the title.
+      const urlId = UrlHelper.SLUG_URL_REGEX.exec(
+        node.url.replace("/doc/", "")
+      )?.[1];
+      if (urlId) {
+        map.set(`/doc/${urlId}`, filePath);
+      }
 
       // If this is an imported document, the references to this doc are in the 'doc/{docId}' format.
       // Set this format to replace them with relative URLs in the zip.

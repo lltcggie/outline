@@ -2,17 +2,19 @@ import type { NavigationNode } from "../types";
 import {
   ancestors,
   descendants,
+  findNodeByUrlSlug,
   flattenExpandedTree,
   flattenTree,
 } from "./tree";
 
 const buildNode = (
   id: string,
-  children: NavigationNode[] = []
+  children: NavigationNode[] = [],
+  url = `/doc/${id}`
 ): NavigationNode => ({
   id,
   title: `Title ${id}`,
-  url: `/doc/${id}`,
+  url,
   children,
 });
 
@@ -62,6 +64,50 @@ describe("#flattenTree", () => {
     expect(flattenTree(node as NavigationNode).map((n) => n.id)).toEqual([
       "orphan",
     ]);
+  });
+});
+
+describe("#findNodeByUrlSlug", () => {
+  const tree = buildNode(
+    "collection",
+    [
+      buildNode(
+        "titled",
+        [buildNode("bare", [], "/doc/cccccccccc")],
+        "/doc/getting-started-bbbbbbbbbb"
+      ),
+      buildNode("legacy", [], "/doc/44og44k544oi-dddddddddd"),
+    ],
+    "/collection/guides-aaaaaaaaaa"
+  );
+
+  it("should find a node by its current slug", () => {
+    expect(findNodeByUrlSlug(tree, "getting-started-bbbbbbbbbb")?.id).toBe(
+      "titled"
+    );
+    expect(findNodeByUrlSlug(tree, "cccccccccc")?.id).toBe("bare");
+    expect(findNodeByUrlSlug(tree, "guides-aaaaaaaaaa")?.id).toBe("collection");
+  });
+
+  it("should find a node by a slug with a different title", () => {
+    expect(findNodeByUrlSlug(tree, "old-title-bbbbbbbbbb")?.id).toBe("titled");
+    expect(findNodeByUrlSlug(tree, "44og44k544oi-cccccccccc")?.id).toBe("bare");
+    expect(findNodeByUrlSlug(tree, "-cccccccccc")?.id).toBe("bare");
+  });
+
+  it("should find a node by its urlId alone", () => {
+    expect(findNodeByUrlSlug(tree, "bbbbbbbbbb")?.id).toBe("titled");
+    expect(findNodeByUrlSlug(tree, "dddddddddd")?.id).toBe("legacy");
+  });
+
+  it("should not match a urlId that is only part of another", () => {
+    expect(findNodeByUrlSlug(tree, "bbbbbbbbb")).toBeUndefined();
+    expect(findNodeByUrlSlug(tree, "xbbbbbbbbbb")).toBeUndefined();
+    expect(findNodeByUrlSlug(tree, "eeeeeeeeee")).toBeUndefined();
+  });
+
+  it("should return undefined without a tree", () => {
+    expect(findNodeByUrlSlug(undefined, "bbbbbbbbbb")).toBeUndefined();
   });
 });
 

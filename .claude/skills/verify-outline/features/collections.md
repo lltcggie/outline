@@ -6,7 +6,7 @@ the default permissions. They appear in the sidebar under "Collections".
 ## Sub-features
 
 - Create (name, icon/color, default permission, advanced options)
-- Open a collection page (`/collection/<slug>-<urlId>`) and expand it in the sidebar
+- Open a collection page (`/collection/<urlId>`) and expand it in the sidebar
 - Edit, archive and delete through the collection menu (not mapped yet)
 
 ## How to get to it (user POV)

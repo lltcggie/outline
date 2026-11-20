@@ -2,6 +2,15 @@ import { EmptyResultError } from "sequelize";
 import { buildTemplate } from "@server/test/factories";
 import Template from "./Template";
 
+describe("#path", () => {
+  it("should return only the urlId under the templates settings", async () => {
+    for (const title of ["Meeting Notes", "議事録のひな形"]) {
+      const template = await buildTemplate({ title });
+      expect(template.path).toBe(`/settings/templates/${template.urlId}`);
+    }
+  });
+});
+
 describe("#findByPk", () => {
   it("should return template by id and urlId", async () => {
     const template = await buildTemplate();
@@ -13,6 +22,11 @@ describe("#findByPk", () => {
       rejectOnEmpty: true,
     });
     expect(byUrlId.id).toBe(template.id);
+
+    const bySlug = await Template.findByPk(`old-title-${template.urlId}`, {
+      rejectOnEmpty: true,
+    });
+    expect(bySlug.id).toBe(template.id);
   });
 
   it("should return null when the id is malformed", async () => {

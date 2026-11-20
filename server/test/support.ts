@@ -4,10 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { faker } from "@faker-js/faker";
+import { QueryTypes, Sequelize } from "sequelize";
 import type { Transaction } from "sequelize";
 import { ZipFile } from "yazl";
 import { afterEach, beforeEach, vi } from "vitest";
 import sharedEnv from "@shared/env";
+import type { NavigationNode } from "@shared/types";
 import { createContext } from "@server/context";
 import env from "@server/env";
 import type { User } from "@server/models";
@@ -28,6 +30,60 @@ export function getTestServer() {
   afterAll(() => server.close());
 
   return server;
+}
+
+/**
+ * Opens a database connection for the current test file on which `collections`
+ * is an empty temporary table that hides the real one. A migration that
+ * rewrites every collection can then run against rows of the test alone,
+ * without reading or changing those of tests that run at the same time.
+ *
+ * @returns the query interface to run the migration with, and functions to
+ * insert a collection with a document structure and to read one back.
+ */
+export function getIsolatedCollectionsTable() {
+  if (!env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is required to isolate the collections");
+  }
+
+  // A temporary table belongs to one connection, so the pool holds just one.
+  const db = new Sequelize(env.DATABASE_URL, {
+    logging: false,
+    pool: { max: 1, min: 1 },
+  });
+
+  beforeAll(async () => {
+    await db.query(
+      `CREATE TEMPORARY TABLE collections (id uuid PRIMARY KEY, "documentStructure" jsonb, "updatedAt" timestamptz NOT NULL DEFAULT now())`
+    );
+  });
+  afterAll(() => db.close());
+
+  return {
+    queryInterface: db.getQueryInterface(),
+
+    insert: async (documentStructure: NavigationNode[] | null) => {
+      const id = randomUUID();
+      await db.query(
+        `INSERT INTO collections (id, "documentStructure") VALUES (:id, CAST(:documentStructure AS jsonb))`,
+        {
+          replacements: {
+            id,
+            documentStructure: JSON.stringify(documentStructure),
+          },
+        }
+      );
+      return id;
+    },
+
+    read: async (id: string) => {
+      const [row] = await db.query<IsolatedCollection>(
+        `SELECT "documentStructure", "updatedAt" FROM collections WHERE id = :id`,
+        { type: QueryTypes.SELECT, replacements: { id } }
+      );
+      return row;
+    },
+  };
 }
 
 /**
@@ -80,6 +136,12 @@ export function getTestProxy(
   });
 
   return proxy;
+}
+
+/** A row of the table created by `getIsolatedCollectionsTable`. */
+interface IsolatedCollection {
+  documentStructure: NavigationNode[] | null;
+  updatedAt: Date;
 }
 
 interface TestProxy {

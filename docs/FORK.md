@@ -21,10 +21,10 @@ GitLab連携のリンクプレビュー（展開・メンション）が、各�
 
 ### 環境変数
 
-| 変数 | 必須 | 内容 |
-| --- | --- | --- |
-| `GITLAB_URL` | 任意（推奨） | 自己ホストのGitLabインスタンスのURL（`https` のみ）。Markdown・API・MCPで作られた `@[...](https://gitlab.example.com/...)` 形式のメンションを、Issue・マージリクエスト・プロジェクト型として認識するために使う。未設定の場合はURL型のまま残り、閲覧者の取得結果のタイトルが表示される。インスタンスへの接続自体はワークスペース設定で行う。 |
-| `GITLAB_CLIENT_ID` / `GITLAB_CLIENT_SECRET` | 任意 | 上流と同じ。gitlab.com 用のOAuthアプリケーション。 |
+| 変数                                        | 必須         | 内容                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GITLAB_URL`                                | 任意（推奨） | 自己ホストのGitLabインスタンスのURL（`https` のみ）。Markdown・API・MCPで作られた `@[...](https://gitlab.example.com/...)` 形式のメンションを、Issue・マージリクエスト・プロジェクト型として認識するために使う。未設定の場合はURL型のまま残り、閲覧者の取得結果のタイトルが表示される。インスタンスへの接続自体はワークスペース設定で行う。 |
+| `GITLAB_CLIENT_ID` / `GITLAB_CLIENT_SECRET` | 任意         | 上流と同じ。gitlab.com 用のOAuthアプリケーション。                                                                                                                                                                                                                                                                                          |
 
 OAuthアプリケーションのスコープ（`read_api read_user`）とコールバックURL（`/api/gitlab.callback`）は上流と同じ。
 
@@ -184,12 +184,12 @@ GitHub連携のリンクプレビュー（展開・メンション）を、GitLa
 
 ### 環境変数
 
-| 変数 | 必須 | 内容 |
-| --- | --- | --- |
-| `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` | 任意 | OAuthアプリケーションのクライアントIDとシークレット。両方設定すると連携が有効になる。片方だけ設定すると起動時に環境変数の検証エラーで停止する。 |
-| `ASANA_OAUTH_SCOPES` | 任意 | 連携時に要求するスコープ（スペース区切り）。既定は `tasks:read projects:read users:read`。Full permissions のアプリケーションでは `default`。 |
-| `ASANA_SHOW_SECTION` | 任意 | タスク名の横にセクション名を表示するか。既定は `true`。 |
-| `ASANA_CACHE_SECONDS` | 任意 | タスク・プロジェクトの取得結果をユーザーごとにキャッシュする秒数（1以上。キャッシュは無効にできない）。既定は `300`。Asanaのレート制限（無料プラン 150回/分、有料プラン 1,500回/分）は認可トークン（＝Outlineユーザー）ごとに掛かる。同じAsanaアカウントを複数のOutlineユーザーが連携していても、それぞれ別のトークンなので制限は独立している。制限に当たると、そのリンクは60秒ほど通常のリンクとして表示され、ログに `Failed to fetch resource from Asana` が出る。 |
+| 変数                                      | 必須 | 内容                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ASANA_CLIENT_ID` / `ASANA_CLIENT_SECRET` | 任意 | OAuthアプリケーションのクライアントIDとシークレット。両方設定すると連携が有効になる。片方だけ設定すると起動時に環境変数の検証エラーで停止する。                                                                                                                                                                                                                                                                                                                      |
+| `ASANA_OAUTH_SCOPES`                      | 任意 | 連携時に要求するスコープ（スペース区切り）。既定は `tasks:read projects:read users:read`。Full permissions のアプリケーションでは `default`。                                                                                                                                                                                                                                                                                                                        |
+| `ASANA_SHOW_SECTION`                      | 任意 | タスク名の横にセクション名を表示するか。既定は `true`。                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `ASANA_CACHE_SECONDS`                     | 任意 | タスク・プロジェクトの取得結果をユーザーごとにキャッシュする秒数（1以上。キャッシュは無効にできない）。既定は `300`。Asanaのレート制限（無料プラン 150回/分、有料プラン 1,500回/分）は認可トークン（＝Outlineユーザー）ごとに掛かる。同じAsanaアカウントを複数のOutlineユーザーが連携していても、それぞれ別のトークンなので制限は独立している。制限に当たると、そのリンクは60秒ほど通常のリンクとして表示され、ログに `Failed to fetch resource from Asana` が出る。 |
 
 ### 既存のインスタンスの移行手順（別リポジトリ版のプラグインを使っていた場合）
 
@@ -249,8 +249,8 @@ PostgreSQLの拡張 [PGroonga](https://pgroonga.github.io/ja/) を使う検索�
 
 ### 環境変数
 
-| 変数 | 必須 | 内容 |
-| --- | --- | --- |
+| 変数              | 必須 | 内容                                                                        |
+| ----------------- | ---- | --------------------------------------------------------------------------- |
 | `SEARCH_PROVIDER` | 任意 | `pgroonga` でこのプロバイダーを使う。未設定または `postgres` で標準の検索。 |
 
 ### 既存のインスタンスの移行手順
@@ -299,11 +299,11 @@ outline-search-pgroonga のコンパイル済みプラグインをマウント�
 
 インデックスの内容を変えたときは名前も変え（`documents_pgroonga_v<N>_idx`）、古い名前はスクリプトが削除する。古い定義のまま使っていたインスタンスは、更新後に手順4のスクリプトを再実行する。実行が終わるまで検索は `search-pgroonga-index.js install` の実行を促すエラーになるので、避けたい場合は実行中だけ `SEARCH_PROVIDER` を外す。
 
-| 名前 | 版 | 内容 |
-| --- | --- | --- |
-| `documents_pgroonga_idx` | 別リポジトリ版 `outline-1.10.1` | 本文を `text` 列から取る |
-| `documents_pgroonga_v2_idx` | 別リポジトリ版 `outline-1.10.1-r2` 以降、同梱の初版 | 本文を `content` から取る。過去のタイトルは全部 |
-| `documents_pgroonga_v3_idx` | 現在 | 過去のタイトルは新しいものから20個だけ。それより前のは検索に重みが付かず無視されていたため、古い20個ではなく新しい20個を索引する |
+| 名前                        | 版                                                  | 内容                                                                                                                             |
+| --------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `documents_pgroonga_idx`    | 別リポジトリ版 `outline-1.10.1`                     | 本文を `text` 列から取る                                                                                                         |
+| `documents_pgroonga_v2_idx` | 別リポジトリ版 `outline-1.10.1-r2` 以降、同梱の初版 | 本文を `content` から取る。過去のタイトルは全部                                                                                  |
+| `documents_pgroonga_v3_idx` | 現在                                                | 過去のタイトルは新しいものから20個だけ。それより前のは検索に重みが付かず無視されていたため、古い20個ではなく新しい20個を索引する |
 
 ### 元に戻す
 
@@ -331,6 +331,51 @@ outline-search-pgroonga のコンパイル済みプラグインをマウント�
 - プラグインのテストは vitest のプロジェクト `server-pgroonga`（`vitest.config.ts`）で実行する。このプロジェクトはテストDBのサーバーにPGroongaがあるときだけ作られ（無ければその旨の警告が出て、プラグインのテストは実行されない）、`plugins/search-pgroonga/server/globalSetup.ts` がインデックスを作ってからワーカーを起動する。`SEARCH_PROVIDER=pgroonga` で標準プロバイダーのテスト（`plugins/search-postgres/server/PostgresSearchProvider.test.ts`）も実行し、閲覧権限の絞り込み・フィルター・並び順・ページングが標準と同じ期待を満たすことを確かめる。このテストの抜粋の期待値1か所は、両プロバイダーの結果を許す形にしてある。
 - 上流をマージするとき、`plugins/search-postgres/` と `server/utils/BaseSearchProvider.ts` に差分があれば、プラグイン側へ追随させる。`PostgresSearchProvider` の `buildWhere` と `buildTeamWhere`（共有リンクの絞り込みをまとめたもの）はこのフォークで protected にしてプラグインから呼んでおり、上流で名前や引数が変わると `yarn tsc` で止まる。`PGroongaSearchProvider.ts` の `buildRankedOrder` と `buildSnippet` は標準の `buildFindOptions`・`buildResultContext` に対応するので、そちらが変わったら合わせる。`shared/editor/` でノード名や属性（`text`、`mention` の `attrs.type`・`attrs.label`、`br`、`attachment` の `attrs.title`、`image` の `attrs.alt`、`href`）が変わったときは、`pgroongaIndex.ts` の本文抽出関数を直し、インデックス名の版を上げて（`PGROONGA_INDEX_NAME`、旧名は `LEGACY_PGROONGA_INDEX_NAMES` に足す）「インデックス定義の履歴」に書く。
 
+## ドキュメント・コレクション・テンプレートのURLをURL IDだけにする
+
+### 変更の概要
+
+上流のドキュメントのURLは `/doc/<タイトルのスラッグ>-<urlId>` の形で、特定には末尾の `urlId`（10文字）だけが使われる。コレクション（`/collection/<名前のスラッグ>-<urlId>`）とテンプレート（`/settings/templates/<タイトルのスラッグ>-<urlId>`）も同じ作り。上流には次の2点があり、日本語で運用すると不便だった。
+
+- 画面側のルートがハイフンを必須にしていて、`/doc/<urlId>` と `/collection/<urlId>` は 404 になる（API は `urlId` 単体を受け付けるのに、画面だけ `/doc/-<urlId>` と書く必要があった）。
+- タイトルに英数字が1文字も無いと、スラッグが base64 を小文字化した文字列（例: `テスト用ページ` → `44og44k544oi55so44oa44o844k4`）になる。読めず、元のタイトルにも戻せず、URLが長くなるだけだった。英数字が混じるタイトルはその部分だけがスラッグになり（`会議のメモ 2026 Q1` → `2026-q1`）、タイトルによってURLの形がばらばらだった。
+
+フォークでは次のようにしてある。
+
+- URLはタイトルによらず `urlId` だけにする（`/doc/<urlId>`・`/collection/<urlId>`・`/settings/templates/<urlId>`）。`Document.getPath`・`Collection.getPath`・`Template` の `path` が `urlId` だけを使う。`getPath` の引数にはタイトルが残っているが、呼び出し側を上流と同じにしておくためで、使っていない。
+- `/doc/<urlId>` と `/collection/<urlId>` を画面で開ける。ルートの定義は `app/utils/routeHelpers.ts` の `matchDocumentSlug`・`matchCollectionSlug` で、どちらも共通のパターン `slugPattern` から作る（`updateDocumentPath` が使う正規表現も同じ）。React Router v5 が使う path-to-regexp v1 は `(?:title-)?` のような入れ子のグループを受け付けないので、「タイトル付き」と「`urlId` 単体」を `|` で並べている。`/doc/<slug>/edit`・`/doc/<slug>/history/...`・`/d/<slug>`・共有ページの `/s/<shareId>/doc/<slug>`・`/collection/<slug>/<タブ>`・`/collection/<slug>/new` も同じ定義を使う。テンプレートのルート（`/settings/templates/:id`）は上流から形の制限が無い。
+- これまでのURLはすべてそのまま開ける。前半に何が書かれていても `urlId` だけで照合するので、タイトル付きのURL・base64 付きのURL・改名前のタイトルのURL・`/doc/-<urlId>` のどれでも同じものが開く。ドキュメントとコレクションは、開いた後にアドレスバーが `urlId` だけのURLへ置き換わる（`updateDocumentPath`・`updateCollectionPath`）。本文に埋め込まれたタイトル付きの内部リンクも同様に動く。
+- 共有ページは、URLのスラッグを共有ツリーの各ノードの `url` と後方一致で照合していたため、前半が変わると該当ページを見つけられなかった。`urlId` だけで照合するようにした（`shared/utils/tree.ts` の `findNodeByUrlSlug`）。
+- エクスポートは、本文中の内部リンクをzip内の相対パスに置き換えるとき、リンクの文字列がツリーの `url` と完全に一致するものだけを対象にしていた。本文に残るタイトル付きのリンクが置き換わらなくなるので、完全一致が無ければ `urlId` で引くようにした（`server/queues/tasks/ExportDocumentTreeTask.ts`）。ツリー側にタイトル付きの `url` が残っていても引けるよう、`/doc/<urlId>` のキーも登録する。
+- `server/utils/slugify.ts` は上流のまま。URLには使わなくなったが、ドキュメントをダウンロードするときのファイル名などで使われている。
+
+### 既存のインスタンスの移行手順
+
+サーバー側の作業は要らない。更新した時点から、API の応答・リンクのコピー・開いた後のアドレスバーが新しい形になる。
+
+上流から直接この版へ更新する場合は、利用者に、更新後に開いているタブを再読み込みしてもらう。上流の画面は `/doc/<urlId>` と `/collection/<urlId>` を開けないので、再読み込みするまでドキュメントとコレクションへ移動すると「Not found」になる。放置しても、約1日ごとの自動再読み込み（`useAutoRefresh`）で解消する。`urlId` 単体を開けるようになった版（2026年11月20日以降のフォーク）からの更新なら、再読み込みしなくても開ける。
+
+コレクションのツリー（`collections.documentStructure`）には各ドキュメントの `url` が保存されていて、サイドバー・共有ページのサイドバー・サイトマップのリンク先に使われる。これは起動時のマイグレーションが書き換える。
+
+- `server/migrations/20261124120000-remove-slugs-from-document-structure.js` が、`/doc/<スラッグ>-<urlId>` の形のURLをすべて `/doc/<urlId>` にする。
+- その前に `server/migrations/20261120120000-remove-unreadable-slugs-from-document-structure.js` も実行される。URLを `urlId` だけにするのがタイトルにスラッグにできる文字が無い場合だけだった時期のもので、base64 のスラッグだけを取り除く。すでに適用したインスタンスがあるので残してある。
+- どちらもコレクションの `updatedAt` は変えない。書き換える行は、行ロック（`FOR NO KEY UPDATE`。サーバーがツリーを書き換えるときに取るのと同じ種類）を取って読み直してから更新する。旧バージョンのプロセスが動いている最中に実行されても、その間の書き込みを上書きしないようにするため。
+- ツリーは Redis に60秒キャッシュされる（`cd:<collectionId>`）。旧バージョンが残したキャッシュは最長60秒で切れる。
+
+### 元に戻す
+
+- 1つ前の版（タイトルにスラッグにできる文字があるときだけスラッグを付ける版）へ戻すときは、何もしなくてよい。その版も `/doc/<urlId>` を開ける。`20261124120000` の巻き戻しは何も書き換えない。
+- 上流など `/doc/<urlId>` を開けない版へ戻すときは、戻す前にこの2つを新しい順に巻き戻す。`yarn db:rollback` は最後に適用したものを戻すだけなので、後から別のマイグレーションを適用していても対象を間違えないよう、ファイル名を指定する（`yarn sequelize db:migrate:undo --name 20261124120000-remove-slugs-from-document-structure.js`、続けて `--name 20261120120000-remove-unreadable-slugs-from-document-structure.js`）。`/doc/<urlId>` の形で保存されているツリーのURLすべてに、タイトルの base64 のスラッグを付け直す。英数字のタイトルにも base64 が付くが、URLの前半は照合に使われないので開ける。
+
+### 注意事項
+
+- 上流をマージするとき、`app/utils/routeHelpers.ts` の `slugPattern`・`matchDocumentSlug`・`matchCollectionSlug`・`updateDocumentPath`、`Document.getPath`・`Collection.getPath`・`Template` の `path`、`app/scenes/Shared/index.tsx` の `useActivePage`（上流は同じファイル内の `findInTree` で後方一致）、`server/queues/tasks/ExportDocumentTreeTask.ts` の内部リンクの置き換え（`pathMap` に `/doc/<urlId>` のキーを足し、完全一致が無ければそれで引く）に差分があれば、この挙動を保つように解決する。
+- 上流のテストには、URLにスラッグが付くことを前提にしたものがある（`server/models/Collection.test.ts` の `#url`、`server/queues/tasks/JSONAPIImportTask.test.ts` など）。上流が同種のテストを足してきたら、`urlId` だけのURLに合わせる。
+- 上流がドキュメントやコレクションのURLを正規表現で解釈する箇所を足してきたら、`urlId` 単体（ハイフン無し）を受け付けるかを確認する。サーバー側の共通の定義 `UrlHelper.SLUG_URL_REGEX` は前半を省略可としているので、これを使っていれば問題ない。
+- 上流が React Router を v6 以降に上げたら、`slugPattern` の書き方（パラメーターに正規表現を付ける記法）ごと見直しになる。
+- 上流が `slug` パッケージの base64 への代用の仕方を変えても、`20261120120000` はその時点までに保存されたURLを対象にした固定の計算なので直さない。
+- マイグレーションのテストは `server/test/migrations/` に置いてある。`yarn db:migrate`（sequelize-cli）は `server/migrations` に置いた `.test.ts` もマイグレーションとして実行しようとして失敗する（起動時の実行は `*.js` だけを読むので気づきにくい）。どちらのマイグレーションも全コレクションを書き換えるので、テストは `server/test/support.ts` の `getIsolatedCollectionsTable` が作る接続で実行する。その接続では `collections` が一時テーブルになり、同時に走る他のテストの行を読み書きしない。
+
 ## バージョンタグでDockerイメージをDocker Hubに公開する
 
 ### 仕組み
@@ -345,9 +390,9 @@ outline-search-pgroonga のコンパイル済みプラグインをマウント�
 
 このフォークは `package.json` の版番号を上流のまま使っているので、上流と同じ `vX.Y.Z` 形式のタグは使わない。「基にした上流の版 + `-custom`」を使い、`docker.yml` もこの形式のタグだけで起動するようにしてある（上流のタグを誤って push してもビルドは走らない）。
 
-| Git タグ | 意味 | Docker Hub に付くタグ |
-| --- | --- | --- |
-| `v1.10.1-custom` | 上流 1.10.1 を基にした正式版 | `1.10.1`、`1.10`、`latest` |
+| Git タグ           | 意味                                         | Docker Hub に付くタグ                    |
+| ------------------ | -------------------------------------------- | ---------------------------------------- |
+| `v1.10.1-custom`   | 上流 1.10.1 を基にした正式版                 | `1.10.1`、`1.10`、`latest`               |
 | `v1.10.1-custom.1` | 同じ上流版を基にした試験版（`.` の後は連番） | `1.10.1-1` のみ。`latest` は更新されない |
 
 `-custom` は Git タグだけの印で、Docker Hub のタグには付けない（上流のイメージとは名前空間が違うので衝突しない）。イメージタグは `docker/metadata-action` の自動判定ではなく、`docker.yml` の前段ジョブ `tags` がタグ名から計算している。`-custom` で終わるタグだけ `latest` を付ける。同じ上流版で改造を重ねて正式版を出し直す場合は、`v1.10.1-custom` を打ち直すのではなく上流版を上げるか、試験版の連番を使う。`Actions` タブから手動実行（`workflow_dispatch`）した場合はブランチ名のタグになり、`latest` は付かない。
@@ -379,11 +424,11 @@ git push origin v1.10.1-custom
 
 フォークで使うワークフローは次の3本だけ。それ以外の上流のワークフローと bot 用の設定は削除してある。
 
-| ファイル | 用途 |
-| --- | --- |
-| `.github/workflows/docker.yml` | 改造版のタグでDockerイメージを公開する（前節） |
-| `.github/workflows/docker-build.yml` | 上記から呼ばれるビルド本体 |
-| `.github/workflows/ci.yml` | リント・型チェック・テスト。上流は `main` への push で動かすが、フォークでは `main-custom` への push と PR で動くように起動条件を変えてある。`test-server` ジョブは、上流がランナーに同梱の PostgreSQL を起動するのに対し、フォークでは PGroonga 入りのサービスコンテナ（`groonga/pgroonga`）を使う（PGroonga の節を参照）。`.github/actions/install` はこのワークフローが使う共通処理 |
+| ファイル                             | 用途                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/docker.yml`       | 改造版のタグでDockerイメージを公開する（前節）                                                                                                                                                                                                                                                                                                                                         |
+| `.github/workflows/docker-build.yml` | 上記から呼ばれるビルド本体                                                                                                                                                                                                                                                                                                                                                             |
+| `.github/workflows/ci.yml`           | リント・型チェック・テスト。上流は `main` への push で動かすが、フォークでは `main-custom` への push と PR で動くように起動条件を変えてある。`test-server` ジョブは、上流がランナーに同梱の PostgreSQL を起動するのに対し、フォークでは PGroonga 入りのサービスコンテナ（`groonga/pgroonga`）を使う（PGroonga の節を参照）。`.github/actions/install` はこのワークフローが使う共通処理 |
 
 削除したもの（上流の運用専用で、フォークでは不要か害になるもの）:
 

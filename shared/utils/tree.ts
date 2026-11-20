@@ -1,4 +1,5 @@
 import type { NavigationNode } from "../types";
+import { UrlHelper } from "./UrlHelper";
 
 /**
  * Flattens a navigation tree into a list of nodes in depth-first order,
@@ -23,6 +24,31 @@ export const flattenTree = (
   }
 
   return flattened;
+};
+
+/**
+ * Finds the node in a navigation tree that a URL slug refers to. Only the
+ * urlId at the end of the slug is compared, so a slug written with an old
+ * title, or with no title at all, resolves to the same node.
+ *
+ * @param root The root node of the tree to search.
+ * @param slug The slug from the URL, a urlId optionally preceded by a title.
+ * @returns the matching node, or undefined when the tree has none.
+ */
+export const findNodeByUrlSlug = (
+  root: NavigationNode | null | undefined,
+  slug: string
+): NavigationNode | undefined => {
+  const urlId = UrlHelper.SLUG_URL_REGEX.exec(slug)?.[1];
+  if (!urlId) {
+    return undefined;
+  }
+
+  const afterTitle = `-${urlId}`;
+  const alone = `/${urlId}`;
+  return flattenTree(root).find(
+    (node) => node.url.endsWith(afterTitle) || node.url.endsWith(alone)
+  );
 };
 
 /**

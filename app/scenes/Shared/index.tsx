@@ -5,7 +5,7 @@ import { useLocation, useParams } from "react-router-dom";
 import styled, { ThemeProvider } from "styled-components";
 import { s } from "@shared/styles";
 import { isModKey } from "@shared/utils/keyboard";
-import type { NavigationNode } from "@shared/types";
+import { findNodeByUrlSlug } from "@shared/utils/tree";
 import Collection from "~/models/Collection";
 import Document from "~/models/Document";
 import type Share from "~/models/Share";
@@ -86,32 +86,20 @@ function useActivePage(share?: Share) {
     return;
   }
 
-  const findInTree = (
-    node: NavigationNode,
-    slugToFind: string
-  ): string | undefined => {
-    if (node.url.endsWith(slugToFind)) {
-      return node.id;
-    }
-    if (node.children) {
-      for (const child of node.children) {
-        const foundId = findInTree(child, slugToFind);
-        if (foundId) {
-          return foundId;
-        }
-      }
-    }
-    return;
-  };
-
   if (!share.tree) {
     return share.collectionId
       ? { type: "collection", id: share.collectionId }
       : { type: "document", id: share.documentId };
   } else if (documentSlug) {
-    return { type: "document", id: findInTree(share.tree, documentSlug) };
+    return {
+      type: "document",
+      id: findNodeByUrlSlug(share.tree, documentSlug)?.id,
+    };
   } else if (collectionSlug) {
-    return { type: "collection", id: findInTree(share.tree, collectionSlug) };
+    return {
+      type: "collection",
+      id: findNodeByUrlSlug(share.tree, collectionSlug)?.id,
+    };
   } else {
     if (share.collectionId) {
       return { type: "collection", id: share.collectionId };

@@ -6,6 +6,21 @@ import type Document from "~/models/Document";
 import env from "~/env";
 import Desktop from "~/utils/Desktop";
 
+const urlIdPattern = "[a-zA-Z0-9]{10,15}";
+
+/**
+ * The pattern of a slug in a route: a urlId, optionally preceded by a slugified
+ * title and a hyphen. The title is never used for the lookup, so links written
+ * with an old or different title still match.
+ *
+ * Written as two alternatives because the router's path-to-regexp version
+ * rejects a nested group such as `(?:title-)?`.
+ */
+const slugPattern = `[0-9a-zA-Z-_~]*-${urlIdPattern}|${urlIdPattern}`;
+
+/** Matches the path to a document, up to the end of its slug. */
+const documentPathRegex = new RegExp(`/doc/(?:${slugPattern})(?=[/?#]|$)`);
+
 /**
  * Returns the path to the home screen.
  *
@@ -186,10 +201,7 @@ export function documentHistoryPath(
  */
 export function updateDocumentPath(oldUrl: string, document: Document): string {
   // Update url to match the current one
-  return oldUrl.replace(
-    new RegExp("/doc/([0-9a-zA-Z-_~]*-[a-zA-z0-9]{10,15})"),
-    document.path
-  );
+  return oldUrl.replace(documentPathRegex, document.path);
 }
 
 /**
@@ -329,15 +341,13 @@ export function desktopify(path: string, origin?: string): string {
 }
 
 /** Route matcher for a collection slug. */
-export const matchCollectionSlug =
-  ":collectionSlug([0-9a-zA-Z-_~]*-[a-zA-z0-9]{10,15})";
+export const matchCollectionSlug = `:collectionSlug(${slugPattern})`;
 
 /** Route matcher for the collection edit screen. */
 export const matchCollectionEdit = `/collection/${matchCollectionSlug}/overview/edit`;
 
 /** Route matcher for a document slug. */
-export const matchDocumentSlug =
-  ":documentSlug([0-9a-zA-Z-_~]*-[a-zA-z0-9]{10,15})";
+export const matchDocumentSlug = `:documentSlug(${slugPattern})`;
 
 /** Route matcher for the document edit screen. */
 export const matchDocumentEdit = `/doc/${matchDocumentSlug}/edit`;

@@ -55,7 +55,6 @@ import { DocumentPreferenceDefaults } from "@shared/constants";
 import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import { ProsemirrorHelper } from "@shared/utils/ProsemirrorHelper";
 import { UrlHelper } from "@shared/utils/UrlHelper";
-import slugify from "@server/utils/slugify";
 import { DeprecationValidation, DocumentValidation } from "@shared/validations";
 import { InvalidRequestError, ValidationError } from "@server/errors";
 import { afterCommit } from "@server/storage/transaction";
@@ -500,17 +499,16 @@ class Document extends ArchivableModel<
     return `collaborators:v2:${documentId}`;
   }
 
-  static getPath({ title, urlId }: { title: string; urlId: string }) {
-    if (!title.length) {
-      return `/doc/untitled-${urlId}`;
-    }
-    const slugifiedTitle = slugify(title);
-    // If the slugified title is empty (e.g., title only had special characters),
-    // use "untitled" as a fallback to prevent empty URL segments
-    if (!slugifiedTitle) {
-      return `/doc/untitled-${urlId}`;
-    }
-    return `/doc/${slugifiedTitle}-${urlId}`;
+  /**
+   * Returns the frontend path for a document. The path holds only the urlId,
+   * which is all that identifies the document; the title is accepted so that
+   * callers do not differ from upstream, and is not used.
+   *
+   * @param urlId the document URL ID.
+   * @returns the frontend path for the document.
+   */
+  static getPath({ urlId }: { title: string; urlId: string }) {
+    return `/doc/${urlId}`;
   }
 
   // hooks

@@ -23,7 +23,6 @@ import {
   BeforeValidate,
   IsDate,
 } from "sequelize-typescript";
-import slugify from "@server/utils/slugify";
 import type { ProsemirrorData } from "@shared/types";
 import { ProsemirrorDataHelper } from "@shared/utils/ProsemirrorDataHelper";
 import { UrlHelper } from "@shared/utils/UrlHelper";
@@ -190,13 +189,12 @@ class Template extends ParanoidModel<
 
   // getters
 
-  /** The frontend path to this template. */
+  /**
+   * The frontend path to this template. It holds only the urlId, which is all
+   * that identifies the template.
+   */
   get path() {
-    if (!this.title) {
-      return `/settings/templates/untitled-${this.urlId}`;
-    }
-    const slugifiedTitle = slugify(this.title);
-    return `/settings/templates/${slugifiedTitle}-${this.urlId}`;
+    return `/settings/templates/${this.urlId}`;
   }
 
   /**

@@ -148,8 +148,8 @@ Use stable handles that exist in this app:
   `link "Search"`, `main` → `link "New doc"` (scope it: the sidebar's
   Personal section has another `button "New doc"`),
   `button "Account"`, `button "Document options"`.
-- Routes: `/home`, `/search`, `/drafts`, `/collection/<slug>-<urlId>`,
-  `/doc/<slug>-<urlId>`, `/s/<shareId>` (public), `/settings/*`.
+- Routes: `/home`, `/search`, `/drafts`, `/collection/<urlId>`,
+  `/doc/<urlId>`, `/s/<shareId>` (public), `/settings/*`.
 - To find more handles, dump `await page.locator("body").ariaSnapshot()` in a
   scratch journey. Do not rely on a `main` landmark: some pages, such as a
   collection while it loads or search, do not have one.
